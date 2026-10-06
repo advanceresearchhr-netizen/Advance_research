@@ -1,4 +1,4 @@
-import json, os, subprocess, sys
+import json, os, re, subprocess, sys
 
 def call(args, check=True):
     p = subprocess.run(["runpodctl", *args], text=True, capture_output=True)
@@ -7,17 +7,20 @@ def call(args, check=True):
     if p.stderr:
         print(p.stderr, file=sys.stderr)
     if check and p.returncode:
-        raise subprocess.CalledProcessError(p.returncode, p.args)
+        raise subprocess.CalledProcessError(p.returncode, p.args, output=p.stdout, stderr=p.stderr)
     return p
 
 def extract_id(text):
     try:
         data = json.loads(text)
         if isinstance(data, dict):
-            return data.get("id") or data.get("podId")
+            value = data.get("id") or data.get("podId")
+            if value:
+                return value
     except json.JSONDecodeError:
         pass
-    return None
+    m = re.search(r'pod\s+([a-z0-9]+)', text or "", re.I)
+    return m.group(1) if m else None
 
 def main():
     if not os.getenv("RUNPOD_API_KEY"):
@@ -33,13 +36,14 @@ def main():
             "--gpu-id",gpu,
             "--gpu-count","1",
             "--container-disk-in-gb","20",
-            "--wait",
-            "--wait-timeout","5m",
             "--output","json",
-        ])
-        pod_id = extract_id(p.stdout)
+        ], check=False)
+        combined = (p.stdout or "") + "\n" + (p.stderr or "")
+        pod_id = extract_id(combined)
+        if p.returncode:
+            raise RuntimeError(f"Pod creation failed: {combined.strip()}")
         if not pod_id:
-            raise RuntimeError("Pod was created but its ID could not be parsed; refusing to continue.")
+            raise RuntimeError("Pod creation returned success but no Pod ID; refusing to wait.")
         call(["pod","get",pod_id,"--output","json"])
         print(f"SMOKE_TEST_OK pod_id={pod_id}")
     finally:

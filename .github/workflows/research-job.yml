@@ -30,11 +30,13 @@ jobs:
 
       - name: Verify experiment notebook
         run: |
+          set -euo pipefail
           test -f HCRL_Next_Experiment_3Seeds.ipynb
           python -c "import json; json.load(open('HCRL_Next_Experiment_3Seeds.ipynb')); print('Notebook OK')"
 
       - name: Install runpodctl
         run: |
+          set -euo pipefail
           wget --quiet https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd64 -O /tmp/runpodctl
           chmod +x /tmp/runpodctl
           sudo mv /tmp/runpodctl /usr/local/bin/runpodctl
@@ -44,17 +46,20 @@ jobs:
         id: bootstrap
         shell: bash
         run: |
+          set -euo pipefail
           cat > /tmp/hcrl_run.sh <<'SCRIPT'
           set -Eeuo pipefail
           trap 'rc=$?; echo "HCRL_FAILED code=$rc line=$LINENO"; exit $rc' ERR
           export MPLBACKEND=Agg
+
           echo HCRL_BOOTSTRAP_OK
           mkdir -p /content /workspace/hcrl
           cd /workspace/hcrl
 
           echo HCRL_DATA_DOWNLOAD_START
-          wget -q --show-progress https://raw.githubusercontent.com/JehadAlyateem/Car-Hacking-Dataset/main/Car-Hacking-Dataset-1.zip -O d1.zip
-          wget -q --show-progress https://raw.githubusercontent.com/JehadAlyateem/Car-Hacking-Dataset/main/Car-Hacking-Dataset-2.zip -O d2.zip
+          wget -q https://raw.githubusercontent.com/JehadAlyateem/Car-Hacking-Dataset/main/Car-Hacking-Dataset-1.zip -O d1.zip
+          wget -q https://raw.githubusercontent.com/JehadAlyateem/Car-Hacking-Dataset/main/Car-Hacking-Dataset-2.zip -O d2.zip
+
           python - <<'PY'
           import zipfile
           zipfile.ZipFile("d1.zip").extractall("data1")
@@ -67,7 +72,8 @@ jobs:
             test -n "$src"
             cp "$src" "/content/$name"
             rows=$(wc -l < "/content/$name")
-            echo "HCRL_DATA_FILE $name rows=$rows"
+            bytes=$(wc -c < "/content/$name")
+            echo "HCRL_DATA_FILE $name rows=$rows bytes=$bytes"
             test "$rows" -ge 600064
           done
           echo HCRL_DATA_READY
@@ -79,45 +85,52 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          src=Path("HCRL_Next_Experiment_3Seeds.ipynb")
-          nb=json.loads(src.read_text())
+
+          p=Path("HCRL_Next_Experiment_3Seeds.ipynb")
+          nb=json.loads(p.read_text())
           nb["cells"][1]["source"]=["# Google Drive mount disabled for RunPod automation\n"]
+
           code="".join(nb["cells"][3]["source"])
-          code=code.replace(
-              "OUT=Path('/content/drive/MyDrive/CAN_ATCNet/HCRL_FixedSamples_3Seeds_v1')",
-              "OUT=Path('/workspace/hcrl/results/HCRL_FixedSamples_3Seeds_v1')"
-          )
-          nb["cells"][3]["source"]=code.splitlines(True)
+          old="OUT=Path('/content/drive/MyDrive/CAN_ATCNet/HCRL_FixedSamples_3Seeds_v1')"
+          new="OUT=Path('/workspace/hcrl/results/HCRL_FixedSamples_3Seeds_v1')"
+          if old not in code:
+              raise RuntimeError("Expected Colab OUT path not found in notebook")
+          nb["cells"][3]["source"]=code.replace(old,new).splitlines(True)
+
           Path("HCRL_RunPod.ipynb").write_text(json.dumps(nb))
           print("HCRL_NOTEBOOK_PATCHED")
           PY
 
           mkdir -p /workspace/hcrl/results
           echo HCRL_TRAINING_START
-          jupyter nbconvert --to notebook --execute HCRL_RunPod.ipynb             --ExecutePreprocessor.timeout=-1             --output HCRL_executed.ipynb
+
+          jupyter nbconvert             --to notebook             --execute HCRL_RunPod.ipynb             --ExecutePreprocessor.timeout=-1             --output HCRL_executed.ipynb
 
           R=/workspace/hcrl/results/HCRL_FixedSamples_3Seeds_v1
+          test -d "$R"
+
           echo HCRL_RESULTS_BEGIN
-          for file in             validation_by_seed.csv validation_summary.csv             fusion_validation_by_seed.csv frozen_selection.json             paired_validation_AP_vs_focal.csv             heldout_by_seed.csv heldout_summary.csv             heldout_class_audit.csv heldout_prefix_hashes.json; do
+          for file in             validation_by_seed.csv             validation_summary.csv             fusion_validation_by_seed.csv             frozen_selection.json             paired_validation_AP_vs_focal.csv             heldout_by_seed.csv             heldout_summary.csv             heldout_class_audit.csv             heldout_prefix_hashes.json; do
             if [ -f "$R/$file" ]; then
               echo "===== $file ====="
               cat "$R/$file"
             fi
           done
+
           for file in "$R"/seed_*/residual_validation.json; do
             if [ -f "$file" ]; then
               echo "===== $file ====="
               cat "$file"
             fi
           done
+
           echo HCRL_RESULTS_END
           echo HCRL_DONE
           SCRIPT
 
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import base64
-          b=base64.b64encode(open('/tmp/hcrl_run.sh','rb').read()).decode()
-          print("script_b64="+b)
+          print("script_b64="+base64.b64encode(open("/tmp/hcrl_run.sh","rb").read()).decode())
           PY
 
       - name: Create RunPod RTX 4090
@@ -129,15 +142,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           ENV_JSON=$(python - <<'PY'
-          import json,os
-          print(json.dumps({"HCRL_SCRIPT_B64":os.environ["HCRL_SCRIPT_B64"]}))
+          import json, os
+          print(json.dumps({"HCRL_SCRIPT_B64": os.environ["HCRL_SCRIPT_B64"]}))
           PY
           )
-          OUT=$(runpodctl pod create             --name advance-research-hcrl             --image runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04             --gpu-id "$RUNPOD_GPU"             --gpu-count 1             --container-disk-in-gb 40             --env "$ENV_JSON"             --docker-args 'bash -lc "echo $HCRL_SCRIPT_B64 | base64 -d > /tmp/hcrl_run.sh && bash /tmp/hcrl_run.sh"'             --output json)
+
+          OUT=$(runpodctl pod create             --name advance-research-hcrl             --image runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04             --gpu-id "$RUNPOD_GPU"             --gpu-count 1             --container-disk-in-gb 40             --env "$ENV_JSON"             --docker-args 'bash -lc "echo $HCRL_SCRIPT_B64 | base64 -d > /tmp/hcrl_run.sh && exec bash /tmp/hcrl_run.sh"'             --output json)
+
           echo "$OUT"
           POD_ID=$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$OUT")
-          echo "$POD_ID" | tee pod_id.txt
+          test -n "$POD_ID"
+          printf '%s\n' "$POD_ID" | tee pod_id.txt
           echo "pod_id=$POD_ID" >> "$GITHUB_OUTPUT"
 
       - name: Watch experiment
@@ -148,46 +165,38 @@ jobs:
           set -euo pipefail
           POD_ID=$(cat pod_id.txt)
           : > hcrl.log
+
           for i in $(seq 1 360); do
             runpodctl pod logs "$POD_ID" --tail 5000 --source container > podlogs.jsonl 2>/dev/null || true
+
             python - <<'PY' > hcrl.log
           import json
-          for line in open("podlogs.jsonl", errors="replace"):
-              try:
-                  obj=json.loads(line)
-                  print(obj.get("line",""))
-              except Exception:
-                  pass
+          from pathlib import Path
+
+          p=Path("podlogs.jsonl")
+          if p.exists():
+              for line in p.read_text(errors="replace").splitlines():
+                  try:
+                      obj=json.loads(line)
+                      print(obj.get("line",""))
+                  except Exception:
+                      pass
           PY
-            tail -n 30 hcrl.log || true
 
-            if grep -q '^HCRL_DONE
-      - name: Print final HCRL results
-        if: always()
-        run: |
-          if [ -f hcrl.log ]; then
-            sed -n '/HCRL_RESULTS_BEGIN/,/HCRL_RESULTS_END/p' hcrl.log || true
-          fi
+            tail -n 25 hcrl.log || true
 
-      - name: Delete RunPod
-        if: always()
-        env:
-          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
-        run: |
-          if [ -s pod_id.txt ]; then
-            runpodctl pod delete "$(cat pod_id.txt)" || true
-          fi
- hcrl.log; then
+            if grep -q '^HCRL_DONE$' hcrl.log; then
               echo "HCRL experiment completed."
               exit 0
             fi
+
             if grep -q '^HCRL_FAILED ' hcrl.log; then
               echo "RunPod workload failed."
               exit 1
             fi
 
             if ! runpodctl pod get "$POD_ID" --output json > pod_state.json 2>/dev/null; then
-              echo "RunPod no longer exists before HCRL_DONE."
+              echo "RunPod disappeared before HCRL_DONE."
               exit 1
             fi
 
@@ -197,11 +206,13 @@ jobs:
               d=json.load(open("pod_state.json"))
           except Exception:
               print("unknown")
-              raise SystemExit
-          print(d.get("runtimeStatus") or d.get("desiredStatus") or "unknown")
+          else:
+              print(d.get("runtimeStatus") or d.get("desiredStatus") or "unknown")
           PY
             )
+
             echo "RunPod state: $STATE"
+
             case "$STATE" in
               stopped|terminated|EXITED|TERMINATED)
                 echo "RunPod stopped before completion marker."
@@ -211,6 +222,7 @@ jobs:
 
             sleep 20
           done
+
           echo "Timed out waiting for HCRL completion."
           exit 1
 

@@ -36,6 +36,7 @@ def main():
             "--gpu-id",gpu,
             "--gpu-count","1",
             "--container-disk-in-gb","20",
+            "--terminate-after","2h",
             "--output","json",
         ], check=False)
         combined = (p.stdout or "") + "\n" + (p.stderr or "")

@@ -1,0 +1,4 @@
+seed,both_correct,both_wrong,tcn_only_correct,combiner_only_correct,mcnemar_exact_p
+42,3969,19,4,8,0.3876953125
+123,3968,25,1,6,0.125
+2026,3959,27,1,13,0.0018310546875

@@ -1,0 +1,50 @@
+name: Cleanup Duplicate HCRL Pods
+
+on:
+  push:
+    paths:
+      - jobs/cleanup-hcrl.txt
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Install runpodctl
+        run: |
+          wget --quiet https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd64 -O /tmp/runpodctl
+          chmod +x /tmp/runpodctl
+          sudo mv /tmp/runpodctl /usr/local/bin/runpodctl
+          runpodctl version
+
+      - name: Delete newer duplicate HCRL Pods
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runpodctl pod list --output json > pods.json
+          python - <<'PY'
+          import json, subprocess, re
+          data=json.load(open("pods.json"))
+          pods=data if isinstance(data,list) else data.get("pods",[])
+          matches=[p for p in pods if p.get("name")=="advance-research-hcrl" and p.get("desiredStatus")=="RUNNING"]
+          print("MATCHES", [(p.get("id"), p.get("lastStatusChange")) for p in matches])
+          if len(matches) <= 1:
+              print("No duplicate HCRL pods to delete.")
+              raise SystemExit(0)
+          def ts(p):
+              s=p.get("lastStatusChange") or ""
+              m=re.search(r":\s*(.+)$", s)
+              return m.group(1) if m else s
+          matches.sort(key=ts)
+          keep=matches[0]
+          print("KEEP", keep.get("id"), keep.get("lastStatusChange"))
+          for p in matches[1:]:
+              pid=p.get("id")
+              print("DELETE", pid, p.get("lastStatusChange"))
+              subprocess.run(["runpodctl","pod","delete",pid],check=False)
+          PY

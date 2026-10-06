@@ -160,7 +160,24 @@ jobs:
                   pass
           PY
             tail -n 30 hcrl.log || true
-            if grep -q '^HCRL_DONE$' hcrl.log; then
+
+            if grep -q '^HCRL_DONE
+      - name: Print final HCRL results
+        if: always()
+        run: |
+          if [ -f hcrl.log ]; then
+            sed -n '/HCRL_RESULTS_BEGIN/,/HCRL_RESULTS_END/p' hcrl.log || true
+          fi
+
+      - name: Delete RunPod
+        if: always()
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          if [ -s pod_id.txt ]; then
+            runpodctl pod delete "$(cat pod_id.txt)" || true
+          fi
+ hcrl.log; then
               echo "HCRL experiment completed."
               exit 0
             fi
@@ -168,6 +185,30 @@ jobs:
               echo "RunPod workload failed."
               exit 1
             fi
+
+            if ! runpodctl pod get "$POD_ID" --output json > pod_state.json 2>/dev/null; then
+              echo "RunPod no longer exists before HCRL_DONE."
+              exit 1
+            fi
+
+            STATE=$(python - <<'PY'
+          import json
+          try:
+              d=json.load(open("pod_state.json"))
+          except Exception:
+              print("unknown")
+              raise SystemExit
+          print(d.get("runtimeStatus") or d.get("desiredStatus") or "unknown")
+          PY
+            )
+            echo "RunPod state: $STATE"
+            case "$STATE" in
+              stopped|terminated|EXITED|TERMINATED)
+                echo "RunPod stopped before completion marker."
+                exit 1
+                ;;
+            esac
+
             sleep 20
           done
           echo "Timed out waiting for HCRL completion."

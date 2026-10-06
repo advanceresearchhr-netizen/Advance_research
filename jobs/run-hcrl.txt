@@ -4,3 +4,4 @@ fresh-fixed-run
 clean-rebuilt-workflow-run
 priority-diagnostic-run
 selective-combiner-confirmation-run
+selective-combiner-confirmation-retry-sklearn-fix

@@ -3,3 +3,4 @@ retry-after-permission-update
 fresh-fixed-run
 clean-rebuilt-workflow-run
 priority-diagnostic-run
+selective-combiner-confirmation-run

@@ -1,0 +1,4 @@
+seed,both_correct,both_wrong,tcn_ce_only_correct,can_atcnet_only_correct,mcnemar_exact_p
+42,3929,37,23,11,0.05761267291381955
+123,3934,32,27,7,0.0008213953115046024
+2026,3886,26,65,23,8.50110761369032e-06

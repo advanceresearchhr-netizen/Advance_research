@@ -78,6 +78,7 @@ jobs:
           done
           echo HCRL_DATA_READY
 
+          rm -rf repo
           git clone --depth 1 https://github.com/advanceresearchhr-netizen/Advance_research.git repo
           cd repo
           python -m pip install -q nbconvert jupyter pandas scikit-learn matplotlib

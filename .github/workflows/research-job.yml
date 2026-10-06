@@ -110,7 +110,7 @@ jobs:
           test -d "$R"
 
           echo HCRL_RESULTS_BEGIN
-          for file in             validation_by_seed.csv             validation_summary.csv             fusion_validation_by_seed.csv             frozen_selection.json             paired_validation_AP_vs_focal.csv             heldout_by_seed.csv             heldout_summary.csv             heldout_class_audit.csv             heldout_prefix_hashes.json             diagnostic_per_class.csv             diagnostic_calibration.csv             diagnostic_error_overlap.csv             diagnostic_residual.csv             diagnostic_residual_by_class.csv; do
+          for file in             validation_by_seed.csv             validation_summary.csv             fusion_validation_by_seed.csv             frozen_selection.json             paired_validation_AP_vs_focal.csv             heldout_by_seed.csv             heldout_summary.csv             heldout_class_audit.csv             heldout_prefix_hashes.json             diagnostic_per_class.csv             diagnostic_calibration.csv             diagnostic_error_overlap.csv             diagnostic_residual.csv             diagnostic_residual_by_class.csv             confirmation_class_audit.csv             confirmation_protocol.json             confirmation_by_seed.csv             confirmation_summary.csv             confirmation_error_overlap.csv; do
             if [ -f "$R/$file" ]; then
               echo "===== $file ====="
               cat "$R/$file"

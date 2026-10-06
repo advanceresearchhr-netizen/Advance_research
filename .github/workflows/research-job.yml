@@ -8,6 +8,9 @@ on:
         required: true
         default: NVIDIA GeForce RTX 4090
         type: string
+  push:
+    paths:
+      - jobs/run-hcrl.txt
 
 permissions:
   contents: read
@@ -48,8 +51,12 @@ jobs:
           echo HCRL_DATA_DOWNLOAD_START
           wget -q --show-progress https://raw.githubusercontent.com/JehadAlyateem/Car-Hacking-Dataset/main/Car-Hacking-Dataset-1.zip -O d1.zip
           wget -q --show-progress https://raw.githubusercontent.com/JehadAlyateem/Car-Hacking-Dataset/main/Car-Hacking-Dataset-2.zip -O d2.zip
-          unzip -q -o d1.zip -d data1
-          unzip -q -o d2.zip -d data2
+          python - <<'PY'
+          import zipfile
+          zipfile.ZipFile("d1.zip").extractall("data1")
+          zipfile.ZipFile("d2.zip").extractall("data2")
+          print("HCRL_ZIPS_EXTRACTED")
+          PY
 
           for name in DoS_dataset.csv Fuzzy_dataset.csv gear_dataset.csv RPM_dataset.csv; do
             src=$(find /workspace/hcrl -type f -name "$name" -print -quit)
@@ -113,7 +120,7 @@ jobs:
         id: pod
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
-          RUNPOD_GPU: ${{ inputs.gpu }}
+          RUNPOD_GPU: ${{ inputs.gpu || 'NVIDIA GeForce RTX 4090' }}
           HCRL_SCRIPT_B64: ${{ steps.bootstrap.outputs.script_b64 }}
         shell: bash
         run: |

@@ -7,26 +7,20 @@ on:
         required: true
         default: NVIDIA GeForce RTX 4090
         type: string
-      terminate_after:
-        description: Hard auto-termination fuse
-        required: true
-        default: 1h
-        type: string
 permissions:
   contents: read
 jobs:
-  create-pod:
+  smoke-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Install runpodctl
+      - name: Install current runpodctl
         run: |
-          curl -L https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd -o /usr/local/bin/runpodctl
-          chmod +x /usr/local/bin/runpodctl
-      - name: Create ephemeral GPU Pod
+          curl -sL cli.runpod.io | sudo bash
+          runpodctl version
+      - name: Create, verify and delete ephemeral GPU Pod
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_GPU: ${{ inputs.gpu }}
-          RUNPOD_TERMINATE_AFTER: ${{ inputs.terminate_after }}
         run: python runner/launch_job.py

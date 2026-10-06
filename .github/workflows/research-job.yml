@@ -1,4 +1,4 @@
-name: Research GPU Pod Smoke Test
+name: Research GPU Pod Provisioning
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install current runpodctl
@@ -21,7 +21,7 @@ jobs:
           chmod +x /tmp/runpodctl
           sudo mv /tmp/runpodctl /usr/local/bin/runpodctl
           runpodctl version
-      - name: Create, verify and delete ephemeral GPU Pod
+      - name: Provision and verify ephemeral GPU Pod with hard fuse
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_GPU: ${{ inputs.gpu }}

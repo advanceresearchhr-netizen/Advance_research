@@ -17,7 +17,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install current runpodctl
         run: |
-          curl -sL cli.runpod.io | sudo bash
+          wget --quiet --show-progress https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd64 -O /tmp/runpodctl
+          chmod +x /tmp/runpodctl
+          sudo mv /tmp/runpodctl /usr/local/bin/runpodctl
           runpodctl version
       - name: Create, verify and delete ephemeral GPU Pod
         env:

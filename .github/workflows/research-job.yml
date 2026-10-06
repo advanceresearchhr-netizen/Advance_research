@@ -125,7 +125,9 @@ jobs:
           done
 
           echo HCRL_RESULTS_END
+          touch /workspace/hcrl/.completed
           echo HCRL_DONE
+          sleep infinity
           SCRIPT
 
           python - <<'PY' >> "$GITHUB_OUTPUT"
@@ -185,15 +187,17 @@ jobs:
 
             tail -n 25 hcrl.log || true
 
-            if grep -q '^HCRL_DONE$' hcrl.log; then
+            TERMINAL=$(grep -E '^HCRL_DONE$|^HCRL_FAILED ' hcrl.log | tail -n 1 || true)
+            if [ "$TERMINAL" = "HCRL_DONE" ]; then
               echo "HCRL experiment completed."
               exit 0
             fi
-
-            if grep -q '^HCRL_FAILED ' hcrl.log; then
-              echo "RunPod workload failed."
-              exit 1
-            fi
+            case "$TERMINAL" in
+              HCRL_FAILED*)
+                echo "RunPod workload failed: $TERMINAL"
+                exit 1
+                ;;
+            esac
 
             if ! runpodctl pod get "$POD_ID" --output json > pod_state.json 2>/dev/null; then
               echo "RunPod disappeared before HCRL_DONE."

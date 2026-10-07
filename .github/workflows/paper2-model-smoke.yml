@@ -1,0 +1,18 @@
+name: Paper2 Model Smoke
+on:
+  push:
+    paths: ['paper2/model-smoke-trigger.txt']
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - run: pip -q install torch
+      - run: python paper2/model_smoke.py | tee paper2/model_smoke_result.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paper2-model-smoke
+          path: paper2/model_smoke_result.txt
+          retention-days: 90

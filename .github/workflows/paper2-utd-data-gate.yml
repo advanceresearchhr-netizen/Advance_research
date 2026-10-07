@@ -1,0 +1,60 @@
+name: Paper2 UTD Data Gate
+on:
+  push:
+    paths: ['paper2/data-gate-trigger.txt']
+  workflow_dispatch:
+jobs:
+  data-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Disk check
+        run: df -h
+      - name: Download official RGB and skeleton archives
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 4 --retry-delay 3 -o RGB.zip 'https://personal.utdallas.edu/~kehtar/UTD-MAD/RGB.zip'
+          curl -fL --retry 4 --retry-delay 3 -o Skeleton.zip 'https://personal.utdallas.edu/~kehtar/UTD-MAD/Skeleton.zip'
+          ls -lh RGB.zip Skeleton.zip
+          sha256sum RGB.zip Skeleton.zip | tee paper2/archive_sha256.txt
+      - name: ZIP integrity and paired trial validation
+        run: python paper2/validate_utd_archives.py
+      - name: Extract one paired sample and smoke test formats
+        run: |
+          python - <<'PY'
+          import zipfile,re,json,os
+          from pathlib import Path
+          pat=re.compile(r"a(\d+)_s(\d+)_t(\d+)",re.I)
+          with zipfile.ZipFile("RGB.zip") as zr, zipfile.ZipFile("Skeleton.zip") as zs:
+            R={pat.search(Path(n).stem).groups():n for n in zr.namelist() if pat.search(Path(n).stem)}
+            S={pat.search(Path(n).stem).groups():n for n in zs.namelist() if pat.search(Path(n).stem)}
+            key=sorted(set(R)&set(S))[0]
+            os.makedirs("/tmp/utd_smoke",exist_ok=True)
+            rp=zr.extract(R[key],"/tmp/utd_smoke"); sp=zs.extract(S[key],"/tmp/utd_smoke")
+            assert os.path.getsize(rp)>1000 and os.path.getsize(sp)>100
+            print("SMOKE_PAIR_OK",key,os.path.getsize(rp),os.path.getsize(sp))
+          PY
+      - name: Python loader smoke test
+        run: |
+          pip -q install scipy opencv-python-headless
+          python - <<'PY'
+          import glob,cv2,scipy.io,os
+          avi=glob.glob("/tmp/utd_smoke/**/*.avi",recursive=True)[0]
+          mat=glob.glob("/tmp/utd_smoke/**/*.mat",recursive=True)[0]
+          cap=cv2.VideoCapture(avi); ok,frame=cap.read(); n=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
+          assert ok and frame is not None and n>0
+          d=scipy.io.loadmat(mat)
+          arrays={k:v.shape for k,v in d.items() if not k.startswith("__") and hasattr(v,"shape")}
+          assert arrays
+          print("RGB_LOADER_OK",frame.shape,"frames",n)
+          print("SKELETON_MAT_OK",arrays)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paper2-utd-data-gate
+          path: |
+            paper2/data_integrity.json
+            paper2/archive_sha256.txt
+          retention-days: 90

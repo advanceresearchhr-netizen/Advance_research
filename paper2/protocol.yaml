@@ -1,0 +1,38 @@
+paper2:
+  title: Faithful Explainable Multimodal HAR
+  dataset: NTU_RGBD_60
+  splits: [cross_subject, cross_view]
+  seed_set: [42, 123, 2026]
+  modalities:
+    - rgb
+    - skeleton_3d
+  derived_evidence:
+    - skeleton_motion
+  xai_levels:
+    - temporal
+    - rgb_region
+    - skeleton_joint
+    - modality
+  primary_xai_tests:
+    - deletion_auc
+    - confidence_drop_topk
+    - matched_random_control
+    - bottom_vs_top
+    - stability_small_perturbation
+  secondary_xai_tests:
+    - insertion_auc
+  recognition_metrics:
+    - top1_accuracy
+    - macro_f1
+    - per_class_recall
+  integrity:
+    test_tuning: false
+    official_split_only: true
+    archive_before_gpu_delete: true
+    require_random_xai_baseline: true
+    require_paired_confidence_intervals: true
+  gpu_launch_gate:
+    require_official_dataset: true
+    require_preflight: true
+    require_smoke_test: true
+    require_artifact_upload: true

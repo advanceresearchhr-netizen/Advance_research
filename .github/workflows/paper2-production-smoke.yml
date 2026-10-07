@@ -1,0 +1,26 @@
+name: Paper2 Production Smoke
+on:
+  push:
+    paths: ['paper2/production-smoke-trigger.txt']
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download verified official UTD data
+        run: |
+          curl --http1.1 -fL -C - --retry 12 --retry-all-errors --retry-delay 2 -o RGB.zip https://personal.utdallas.edu/~kehtar/UTD-MAD/RGB.zip
+          curl --http1.1 -fL -C - --retry 12 --retry-all-errors --retry-delay 2 -o Skeleton.zip https://personal.utdallas.edu/~kehtar/UTD-MAD/Skeleton.zip
+          echo "058dded078b2c21eff901d98fe0a86d5343d11e9d6c07081aaa3e3280a43052b  RGB.zip" | sha256sum -c -
+          echo "f029ea1d4e4c330b2c61307b6d532b34c3920bcac1f4c22c7827f406e2c7ac00  Skeleton.zip" | sha256sum -c -
+      - run: pip -q install torch scipy opencv-python-headless numpy
+      - name: Execute production experiment core on real paired data
+        run: python paper2/experiment.py --limit 8 --out paper2/production_smoke.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paper2-production-smoke
+          path: paper2/production_smoke.json
+          retention-days: 90

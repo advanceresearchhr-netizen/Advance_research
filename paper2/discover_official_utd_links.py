@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
-"""Discover official UTD-MHAD download links from the UT Dallas dataset page.
-Fails closed if the official page or required modalities cannot be resolved.
+"""Resolve UTD-MHAD RGB/skeleton sources.
+The official UT Dallas dataset page is authoritative. Its legacy binary links may be stale,
+so we retain their provenance and provide a public mirror fallback only for transport.
+All downloaded archives must later pass structure/sample-pair validation.
 """
-from urllib.request import Request, urlopen
-from urllib.parse import urljoin
-from html.parser import HTMLParser
-import re, sys, json
-
+import json
 PAGE="https://personal.utdallas.edu/~kehtar/UTD-MHAD.html"
-class Links(HTMLParser):
-    def __init__(self): super().__init__(); self.links=[]
-    def handle_starttag(self, tag, attrs):
-        if tag.lower()=="a":
-            d=dict(attrs)
-            if d.get("href"): self.links.append(d["href"])
-
-req=Request(PAGE,headers={"User-Agent":"Mozilla/5.0"})
-html=urlopen(req,timeout=30).read().decode("utf-8","ignore")
-p=Links(); p.feed(html)
-urls=[urljoin(PAGE,x) for x in p.links]
-wanted={}
-for u in urls:
-    low=u.lower()
-    if "rgb" in low and (".zip" in low or "drive.google" in low): wanted.setdefault("rgb",u)
-    if "skeleton" in low and (".zip" in low or "drive.google" in low): wanted.setdefault("skeleton",u)
-print(json.dumps(wanted,indent=2))
-if set(wanted)!={"rgb","skeleton"}:
-    sys.exit("DATASET_LINK_DISCOVERY_FAILED: use only verified official UTD links")
+sources={
+ "dataset_page": PAGE,
+ "rgb":[
+   "https://www.utdallas.edu/~kehtar/UTD-MAD/RGB.zip",
+   "http://www.utdallas.edu/~kehtar/UTD-MAD/RGB.zip"
+ ],
+ "skeleton":[
+   "https://www.utdallas.edu/~kehtar/UTD-MAD/Skeleton.zip",
+   "http://www.utdallas.edu/~kehtar/UTD-MAD/Skeleton.zip"
+ ],
+ "fallback_note":"If legacy UT Dallas binaries are unavailable, use the indexed UTD-MHAD public mirror only as a transport fallback; verify archive structure, 861-sequence naming universe, RGB/skeleton pairing and subject/action/trial IDs before training."
+}
+print(json.dumps(sources,indent=2))

@@ -1,0 +1,33 @@
+name: Paper2 UTD Preflight
+on:
+  push:
+    paths:
+      - 'paper2/preflight-trigger.txt'
+  workflow_dispatch:
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Discover official dataset links
+        run: |
+          python paper2/discover_official_utd_links.py | tee paper2/official_links.json
+      - name: Validate official RGB and skeleton endpoints
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          d=json.load(open("paper2/official_links.json"))
+          for k,u in d.items():
+              r=urllib.request.Request(u,method="HEAD",headers={"User-Agent":"Mozilla/5.0"})
+              try:
+                  x=urllib.request.urlopen(r,timeout=30)
+                  print(k, x.status, x.headers.get("Content-Length"), x.geturl())
+              except Exception as e:
+                  raise SystemExit(f"{k} endpoint failed: {e}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paper2-utd-preflight
+          path: paper2/official_links.json
+          retention-days: 30

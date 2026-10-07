@@ -12,6 +12,11 @@ paper2:
     test_subjects: [2, 4, 6, 8]
     source: original_UTD_MHAD_paper
   seed_set: [42, 123, 2026]
+  model_selection:
+    method: leave_one_training_subject_out
+    subjects: [1, 3, 5, 7]
+    final_retrain: all_training_subjects
+    final_test_once: true
   derived_evidence: [skeleton_motion]
   xai_levels: [temporal, rgb_region, skeleton_joint, modality]
   primary_xai_tests:

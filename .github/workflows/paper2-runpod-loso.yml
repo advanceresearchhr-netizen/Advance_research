@@ -1,0 +1,85 @@
+name: Paper2 UTD LOSO GPU
+on:
+  push:
+    paths: ['paper2/runpod-loso-trigger.txt']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: paper2-utd-loso-gpu
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install runpodctl
+        run: |
+          wget --quiet https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd64 -O /tmp/runpodctl
+          chmod +x /tmp/runpodctl && sudo mv /tmp/runpodctl /usr/local/bin/runpodctl
+          runpodctl version
+      - name: Build bootstrap
+        id: boot
+        run: |
+          cat > /tmp/run.sh <<'SCRIPT'
+          set -Eeuo pipefail
+          trap 'rc=$?; echo "PAPER2_GPU_FAILED code=$rc line=$LINENO"; sleep infinity' ERR
+          mkdir -p /workspace/paper2/results && cd /workspace/paper2
+          echo PAPER2_GPU_BOOT
+          if [ ! -f RGB.zip ]; then curl --http1.1 -fL -C - --retry 12 --retry-all-errors -o RGB.zip https://personal.utdallas.edu/~kehtar/UTD-MAD/RGB.zip; fi
+          if [ ! -f Skeleton.zip ]; then curl --http1.1 -fL -C - --retry 12 --retry-all-errors -o Skeleton.zip https://personal.utdallas.edu/~kehtar/UTD-MAD/Skeleton.zip; fi
+          echo "058dded078b2c21eff901d98fe0a86d5343d11e9d6c07081aaa3e3280a43052b  RGB.zip" | sha256sum -c -
+          echo "f029ea1d4e4c330b2c61307b6d532b34c3920bcac1f4c22c7827f406e2c7ac00  Skeleton.zip" | sha256sum -c -
+          rm -rf repo && git clone --depth 1 https://github.com/advanceresearchhr-netizen/Advance_research.git repo && cd repo
+          pip -q install scipy opencv-python-headless numpy
+          echo PAPER2_TRAINING_START
+          python paper2/dev_loso.py --rgb ../RGB.zip --skel ../Skeleton.zip --cache ../utd_train_cache.pt --out ../results/dev_loso.json --epochs 20 --batch 16 --seeds 42 123 2026
+          cat ../results/dev_loso_summary.json
+          echo PAPER2_GPU_DONE
+          sleep infinity
+          SCRIPT
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import base64
+          print("b64="+base64.b64encode(open("/tmp/run.sh","rb").read()).decode())
+          PY
+      - name: Create RTX 4090 Pod
+        id: pod
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          SCRIPT_B64: ${{ steps.boot.outputs.b64 }}
+        run: |
+          ENV_JSON=$(python -c 'import json,os; print(json.dumps({"SCRIPT_B64":os.environ["SCRIPT_B64"]}))')
+          OUT=$(runpodctl pod create --name paper2-utd-loso --image runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04 --gpu-id "NVIDIA GeForce RTX 4090" --gpu-count 1 --container-disk-in-gb 40 --env "$ENV_JSON" --docker-args 'bash -lc "echo $SCRIPT_B64 | base64 -d > /tmp/run.sh && exec bash /tmp/run.sh"' --output json)
+          echo "$OUT"; POD_ID=$(python -c 'import json,sys;print(json.load(sys.stdin)["id"])' <<<"$OUT"); echo "$POD_ID" | tee pod_id.txt
+      - name: Watch and capture
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          : > paper2.log; POD_ID=$(cat pod_id.txt)
+          for i in $(seq 1 420); do
+            runpodctl pod logs "$POD_ID" --tail 10000 --source container > raw.jsonl 2>/dev/null || true
+            python - <<'PY' > paper2.log
+          import json
+          for line in open("raw.jsonl",errors="ignore"):
+            try: print(json.loads(line).get("line",""))
+            except: pass
+          PY
+            tail -n 20 paper2.log || true
+            grep -q '^PAPER2_GPU_DONE$' paper2.log && exit 0
+            grep -q '^PAPER2_GPU_FAILED ' paper2.log && exit 1
+            sleep 20
+          done
+          exit 1
+      - name: Upload run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper2-utd-loso-gpu-log
+          path: paper2.log
+          retention-days: 90
+      - name: Delete Pod
+        if: always()
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          if [ -s pod_id.txt ]; then runpodctl pod delete "$(cat pod_id.txt)" || true; fi

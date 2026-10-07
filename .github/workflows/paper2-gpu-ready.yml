@@ -1,0 +1,20 @@
+name: Paper2 GPU Ready Gate
+on:
+  push:
+    paths: ['paper2/gpu-ready-trigger.txt']
+  workflow_dispatch:
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - run: pip -q install torch numpy
+      - name: Frozen protocol scientific contract
+        run: python paper2/gpu_ready.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paper2-gpu-ready-gate
+          path: paper2/gpu_ready_report.json
+          retention-days: 90

@@ -31,7 +31,7 @@ def model_evaluate(net,arr,dev,availability=None):
  loader=DataLoader(TensorDataset(*arr),batch_size=64,shuffle=False)
  with torch.inference_mode():
   for r,p,y in loader:
-   logits.append(net(r.to(dev),p.to(dev),availability=availability).cpu())
+   logits.append((net(r.to(dev),p.to(dev)) if isinstance(net,TemporalFusion) else net(r.to(dev),p.to(dev),availability=availability)).cpu())
    ys.append(y)
  return metric(torch.cat(logits),torch.cat(ys))
 def fit_router(base_state,clean,corr,seed,dev,epochs=20):

@@ -1,0 +1,130 @@
+name: Paper3 Penn Action one-shot smoke
+on:
+  push:
+    branches: [paper3/failure-resilience]
+    paths: [paper3/START_SMOKE_ONCE.txt]
+permissions:
+  contents: read
+concurrency:
+  group: paper3-penn-smoke-one
+  cancel-in-progress: false
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 135
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify RunPod secret
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          test -n "$RUNPOD_API_KEY" || { echo "RUNPOD_API_KEY is missing"; exit 1; }
+          test -f paper3/src/paper3/run.py
+          test -f paper3/src/paper3/build_manifest.py
+      - name: Install runpodctl
+        run: |
+          curl -fLsS --retry 4 https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd64 -o /tmp/runpodctl
+          chmod +x /tmp/runpodctl
+          sudo mv /tmp/runpodctl /usr/local/bin/runpodctl
+          runpodctl version
+      - name: Prepare remote one-shot smoke
+        id: bootstrap
+        run: |
+          cat > /tmp/paper3-smoke.sh <<'POD'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          onexit(){ rc=$?; if [[ $rc -ne 0 ]]; then echo "PAPER3_SMOKE_FAILED:$rc"; fi; }
+          trap onexit EXIT
+          mkdir -p /workspace/paper3 && cd /workspace/paper3
+          echo "PAPER3_DATA_DOWNLOAD"
+          wget --tries=4 --timeout=90 -c -O Penn_Action.tar.gz https://www.cis.upenn.edu/~kostas/Penn_Action.tar.gz
+          test "$(stat -c%s Penn_Action.tar.gz)" = "3235203923"
+          python - <<'PY'
+          import tarfile,pathlib
+          dest=pathlib.Path('/workspace/paper3/data');dest.mkdir(exist_ok=True)
+          with tarfile.open('/workspace/paper3/Penn_Action.tar.gz') as a:
+           a.extractall(dest,filter='data')
+          PY
+          git clone --depth=1 --branch paper3/failure-resilience https://github.com/advanceresearchhr-netizen/Advance_research.git repo
+          cd repo/paper3/src
+          python -m pip install -q -r requirements.txt
+          python -m unittest discover -s tests -v
+          python -m paper3.build_manifest --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/penn_manifest.csv
+          python -m paper3.run --manifest /workspace/paper3/penn_manifest.csv --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/smoke --seed 42 --model paper3 --device cuda --limit 2 --epochs 1 --feature-batch 2 --fault blur --severity 0.25
+          python - <<'PY'
+          import json,pathlib
+          p=pathlib.Path('/workspace/paper3/smoke/report.json')
+          x=json.loads(p.read_text())
+          assert x['status']=='smoke_only' and not x['test_touched']
+          assert pathlib.Path('/workspace/paper3/smoke/paper3_seed42.pt').is_file()
+          print('PAPER3_SMOKE_REPORT='+json.dumps(x,sort_keys=True))
+          PY
+          echo "PAPER3_SMOKE_SUCCESS"
+          POD
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import base64
+          print("b64="+base64.b64encode(open('/tmp/paper3-smoke.sh','rb').read()).decode())
+          PY
+      - name: Create single RTX 4090 pod
+        id: pod
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          SCRIPT_B64: ${{ steps.bootstrap.outputs.b64 }}
+        run: |
+          echo "Pod creation requested"
+          ENV_JSON=$(python -c 'import json,os;print(json.dumps({"SCRIPT_B64":os.environ["SCRIPT_B64"]}))')
+          runpodctl pod create --name paper3-penn-smoke-once --image runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04 --gpu-id "NVIDIA GeForce RTX 4090" --gpu-count 1 --container-disk-in-gb 60 --env "$ENV_JSON" --docker-args 'bash -lc "echo $SCRIPT_B64 | base64 -d > /tmp/paper3.sh && exec bash /tmp/paper3.sh"' --output json > pod_response.json
+          python - <<'PY'
+          import json
+          data=json.load(open('pod_response.json'))
+          assert data.get('id'), 'No pod ID. Review RunPod dashboard immediately'
+          open('pod_id.txt','w').write(data['id'])
+          print('Pod created; ID stored for cleanup.')
+          PY
+      - name: Poll bounded smoke result
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          POD_ID=$(cat pod_id.txt)
+          : > paper3-smoke.log
+          for i in $(seq 1 360); do
+            runpodctl pod logs "$POD_ID" --tail 5000 --source container > raw.jsonl 2>/dev/null || true
+            python - <<'PY' > paper3-smoke.log
+          import json
+          for line in open('raw.jsonl',errors='replace'):
+           try:print(json.loads(line).get('line',''))
+           except:pass
+          PY
+            if grep -q '^PAPER3_SMOKE_SUCCESS$' paper3-smoke.log; then
+              grep '^PAPER3_SMOKE_REPORT=' paper3-smoke.log | tail -1
+              exit 0
+            fi
+            if grep -q '^PAPER3_SMOKE_FAILED:' paper3-smoke.log; then
+              tail -n 60 paper3-smoke.log
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for smoke gate"
+          exit 1
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper3-penn-real-data-smoke-logs
+          path: |
+            paper3-smoke.log
+            pod_response.json
+          retention-days: 30
+      - name: Delete RunPod pod
+        if: always()
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          if [ -s pod_id.txt ]; then
+            POD_ID=$(cat pod_id.txt)
+            runpodctl pod delete "$POD_ID"
+            echo "Deleted RunPod pod $POD_ID"
+          else
+            echo "No pod ID recorded; check RunPod dashboard if pod creation failed partway."
+          fi

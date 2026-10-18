@@ -23,6 +23,10 @@ class ReliabilityRouter(nn.Module):
         nn.init.zeros_(self.quality[-1].weight)
         nn.init.constant_(self.quality[-1].bias,4.)
         self.register_buffer('zero',torch.tensor(0.))
+    def train(self,mode=True):
+        super().train(mode)
+        self.reference.eval()
+        return self
     def quality_features(self,rgb,pose):
         # Normalized temporal contrasts and amplitudes; no test labels.
         a=rgb.float();b=pose.float().flatten(2)

@@ -51,7 +51,7 @@ jobs:
           d=pathlib.Path('/workspace/paper3/data');d.mkdir(exist_ok=True)
           with tarfile.open('/workspace/paper3/Penn_Action.tar.gz') as a:a.extractall(d,filter='data')
           PY
-          git clone --depth=1 --branch paper3/failure-resilience https://github.com/advanceresearchhr-netizen/Advance_research.git repo
+          git clone --depth=20 --branch paper3/failure-resilience https://github.com/advanceresearchhr-netizen/Advance_research.git repo
           cd repo && git checkout 4869d07540439f09f95365220a362f5e98c26952 && cd paper3/src
           python -m pip install -q -r requirements.txt
           python -m unittest discover -s tests -v

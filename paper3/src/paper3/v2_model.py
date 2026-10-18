@@ -21,7 +21,7 @@ class ReliabilityRouter(nn.Module):
         # Explicitly default to reference model if there is no verified missing
         # modality. Soft gating is calibrated by supervised corruption targets.
         nn.init.zeros_(self.quality[-1].weight)
-        nn.init.constant_(self.quality[-1].bias,0.)
+        nn.init.constant_(self.quality[-1].bias,4.)
         self.register_buffer('zero',torch.tensor(0.))
     def quality_features(self,rgb,pose):
         # Normalized temporal contrasts and amplitudes; no test labels.
@@ -51,12 +51,14 @@ class ReliabilityRouter(nn.Module):
         # Reference gate gets priority when both sensors physically exist.
         # When one goes missing, force reliable single-sensor fallback.
         both=availability.all(1)
-        w=torch.softmax(q,dim=-1)
+        reliability=torch.sigmoid(q)
+        w=reliability.clone()
         w=w.masked_fill(~availability,0)
         w=w/w.sum(1,keepdim=True).clamp_min(1e-7)
         fallback=w[:,0,None]*rgb_logits+w[:,1,None]*pose_logits
-        logits=torch.where(both[:,None],clean,fallback)
-        return (logits,{'quality_logits':q,'sensor_weights':w,'baseline_logits':clean,'fallback_logits':fallback}) if return_aux else logits
+        fallback_strength=(1-reliability.prod(1)).clamp(0,1)
+        logits=torch.where(both[:,None],(1-fallback_strength[:,None])*clean+fallback_strength[:,None]*fallback,fallback)
+        return (logits,{'quality_logits':q,'reliability':reliability,'fallback_strength':fallback_strength,'sensor_weights':w,'baseline_logits':clean,'fallback_logits':fallback}) if return_aux else logits
 
 def augment_pose(pose,kind,severity,generator):
     p=pose.clone()

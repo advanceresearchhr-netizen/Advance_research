@@ -1,0 +1,1 @@
+Authorized full Penn Action training once: original two-stream TemporalFusion and Paper3 FailureResilientFusion, seeds 42/123/2026. Requires checkpoint transfer and pod cleanup. Trigger generated 2026-10-18.

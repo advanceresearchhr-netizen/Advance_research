@@ -1,0 +1,36 @@
+name: IABF Multi-PIE smoke checks
+on:
+  push:
+    branches: [research/iabf-multipie-50image-ci]
+    paths: [".github/workflows/iabf-smoke.yml", "iabf/**"]
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify experiment is present
+        run: test -f iabf/iabf_multipie_complete.py
+      - name: Compile Python source
+        run: python -m py_compile iabf/iabf_multipie_complete.py
+      - name: Verify 50-image scientific controls
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path("iabf/iabf_multipie_complete.py")
+          tree=ast.parse(p.read_text())
+          names={n.name for n in ast.walk(tree) if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          required={"split_subjects","precompute","estimate_pose","adapt_arcface","full_evaluate","quality_robustness","session_cross_evaluation","lfw_tenfold"}
+          assert required <= names, f"Missing functions: {required-names}"
+          src=p.read_text()
+          assert "len(adapt)!=50" in src
+          assert "len(rows)!=50" in src
+          assert "train_ids.isdisjoint" in src
+          print("PASS: structure and 50-image guards present. This is NOT a GPU experiment.")
+          PY
+      - name: Full experiment not executed on GitHub-hosted CPU
+        run: echo "Requires Multi-PIE dataset, trusted checkpoints, and suitable GPU runner. No accuracy claims from smoke test."

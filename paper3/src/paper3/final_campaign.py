@@ -234,10 +234,17 @@ def main():
   ix=torch.tensor([index[str(z).zfill(4)] for z in frame.sequence])
   return tuple(q[ix] for q in arr)
  train_clean=(pr,pp,py)
- rgbcache={name:cache(pool,name,.5)[:3] for name in RGB_SEEN}
+ rgbcache={}
+ for name in RGB_SEEN:
+  features=cache(pool,name,.5)
+  if features[3]!=pids or not torch.equal(features[2],py):
+   raise ValueError(f'RGB training cache is misaligned for {name}')
+  rgbcache[name]=features[:3]
  gen=torch.Generator().manual_seed(739)
  posecache={name:(pr,augment_pose(pp,name,.5,gen),py) for name in POSE}
  test_clean=cache(test)
+ if len(test_clean[3])!=len(set(test_clean[3])) or len(test_clean[3])!=len(test):
+  raise ValueError('Test video IDs must be unique and cover every official-test sample')
  testsets={('clean',0.):test_clean[:3],('missing_rgb',1.):test_clean[:3],
            ('missing_pose',1.):test_clean[:3]}
  for name in ['frame_dropout','temporal_gap','blur','compression']:

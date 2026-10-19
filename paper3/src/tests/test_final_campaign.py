@@ -2,9 +2,11 @@ import unittest
 import torch
 import numpy as np
 import pandas as pd
+import tempfile
+from pathlib import Path
 from paper3.core import TemporalFusion
 from paper3.v2_model import ReliabilityRouter
-from paper3.final_campaign import MaskAwareReference, mask_inputs, inference, stats, train_no_quality, matched_final_comparisons
+from paper3.final_campaign import MaskAwareReference, mask_inputs, inference, stats, train_no_quality, matched_final_comparisons, classification_outputs
 
 class FinalCampaignTests(unittest.TestCase):
  def setUp(self):
@@ -74,4 +76,20 @@ class FinalCampaignTests(unittest.TestCase):
      video_id='0001',class_id=label,correct=1))
   with self.assertRaisesRegex(ValueError,'Label mismatch'):
    matched_final_comparisons(pd.DataFrame(rows),smoke=True)
+ def test_synthetic_statistics_and_error_artifacts_end_to_end(self):
+  records=[]
+  for condition,severity in [('clean',0.),('missing_rgb',1.),('pose_gap',.5)]:
+   for variant in ('v2','specialist_rule','trained_mask_aware','trained_no_quality_supervision'):
+    for vid in range(1,7):
+     records.append(dict(seed=42,condition=condition,severity=severity,
+      variant=variant,video_id=str(vid).zfill(4),class_id=(vid-1)%15,
+      prediction=(vid-1)%15,confidence=.9,correct=1))
+  mixed=pd.DataFrame(records)
+  paired=matched_final_comparisons(mixed,smoke=True)
+  self.assertEqual(len(paired),9)
+  with tempfile.TemporaryDirectory() as path:
+   classification_outputs(mixed,Path(path),[f'c{i}' for i in range(15)])
+   self.assertTrue((Path(path)/'per_class_metrics.csv').stat().st_size>100)
+   self.assertTrue((Path(path)/'confusion_errors.csv').exists())
+   self.assertTrue((Path(path)/'qualitative_case_index.csv').exists())
 if __name__=='__main__':unittest.main()

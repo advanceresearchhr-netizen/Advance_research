@@ -131,9 +131,9 @@ def inference(model,r,p,availability,device,batch=128):
    logits.append(log.cpu())
  return torch.cat(logits),torch.cat(qvalues) if qvalues else None
 
-def classification_outputs(df,out):
+def classification_outputs(df,out,action_names):
  """Human-readable class confusion/error cases using existing predictions."""
- names=['action_'+str(i) for i in range(15)]
+ names=list(action_names)
  conf=[];rank=[];cases=[]
  for (seed,cond,severity,variant),t in df.groupby(['seed','condition','severity','variant']):
   if cond not in ['clean','missing_rgb','missing_pose','frame_dropout','temporal_gap','pose_gap']:continue
@@ -239,9 +239,29 @@ def main():
  (out/'trained_controls_history.json').write_text(json.dumps(histories,indent=2))
  first=pd.read_csv(out/'predictions_by_video.csv')
  combo=pd.concat([first,pd.DataFrame(detailed)],ignore_index=True)
- classification_outputs(combo,out)
- stat=paired_uncertainty(combo[combo.variant.isin(['v2','legacy_zero','specialist_rule'])].to_dict('records'),n_boot=25 if args.smoke else 1000)
- stat.to_csv(out/'confirmed_within_seed_paired.csv',index=False)
+ classification_outputs(combo,out,classes)
+ from scipy.stats import binomtest
+ comparisons=[]
+ for (seed,condition,severity),part in combo.groupby(['seed','condition','severity']):
+  pivot=part.pivot(index='video_id',columns='variant',values='correct')
+  if 'v2' not in pivot:continue
+  for alternative in ('trained_mask_aware','trained_no_quality_supervision','specialist_rule'):
+   if alternative not in pivot:continue
+   sub=pivot[['v2',alternative]].dropna()
+   a=sub['v2'].to_numpy(dtype=float);b=sub[alternative].to_numpy(dtype=float)
+   gold=part[part.variant=='v2'].set_index('video_id').loc[sub.index,'class_id'].to_numpy()
+   rng=np.random.default_rng(int(seed)+int(severity*1000)+len(condition))
+   boot=[]
+   for _ in range(80 if args.smoke else 1500):
+    ix=np.concatenate([rng.choice(np.flatnonzero(gold==c),int(np.sum(gold==c)),replace=True) for c in np.unique(gold)])
+    boot.append(float((a[ix]-b[ix]).mean()))
+   n10=int(((a==1)&(b==0)).sum());n01=int(((a==0)&(b==1)).sum())
+   comparisons.append({'seed':seed,'condition':condition,'severity':severity,'comparator':alternative,
+    'delta_accuracy_v2_minus_comparator':float((a-b).mean()),'ci95_lower':float(np.percentile(boot,2.5)),
+    'ci95_upper':float(np.percentile(boot,97.5)),
+    'mcnemar_p_exploratory':float(binomtest(min(n10,n01),n10+n01,.5).pvalue) if n10+n01 else 1.})
+ if not comparisons:raise RuntimeError('No matched final comparisons generated')
+ pd.DataFrame(comparisons).to_csv(out/'final_matched_comparisons.csv',index=False)
  # High-quality per-sample reliability detection: matched clean/corrupt pairs.
  # Evaluate actual trained V2 router, rather than pooling corruption types
  # without a clean negative control.

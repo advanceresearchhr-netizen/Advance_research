@@ -70,7 +70,7 @@ def train_mask(base_state,tr,val,seed,device,epochs=18):
  assert ck
  return ck,hist
 
-def train_no_quality(base_state,tr,corrupt,seed,device,epochs=20):
+def train_no_quality(base_state,tr,val,corrupt,seed,device,epochs=20):
  """True TRAINED no-reliability-supervision ablation, with same CE+aux weights,
  qloss coefficient exactly zero. Selection uses identical val score formula."""
  seed_all(seed)
@@ -107,7 +107,7 @@ def train_no_quality(base_state,tr,corrupt,seed,device,epochs=20):
      logits.append(net(a[0][loc].to(device),a[1][loc].to(device)).argmax(1).cpu())
    from sklearn.metrics import f1_score
    return float(f1_score(a[2].numpy(),torch.cat(logits).numpy(),labels=list(range(15)),average='macro',zero_division=0))
-  scores=[accuracy(tr[1])]+[accuracy(va) for _,va,_ in corrupt.values()]
+  scores=[accuracy(val)]+[accuracy(va) for _,va,_ in corrupt.values()]
   score=.6*scores[0]+.4*float(np.mean(scores[1:]))
   history.append({'epoch':ep,'selection_score':score,'val_clean_f1':scores[0]})
   if score>best:
@@ -217,7 +217,7 @@ def main():
   corrupt={}
   for name,data in rgbcache.items():corrupt[name]=(select(tr,data),select(val,data),0)
   for name,data in posecache.items():corrupt[name]=(select(tr,data),select(val,data),1)
-  nocheck,nohist=train_no_quality(bck['model'],(xtr,xval),corrupt,seed,device,epochs=1 if args.smoke else args.v2_epochs)
+  nocheck,nohist=train_no_quality(bck['model'],xtr,xval,corrupt,seed,device,epochs=1 if args.smoke else args.v2_epochs)
   torch.save(nocheck,out/f'no_quality_seed{seed}.pt')
   noqnet=ReliabilityRouter(bck['model']).to(device);noqnet.load_state_dict(nocheck['model'])
   histories.append({'seed':seed,'mask_aware':maskhist,'without_reliability_supervision':nohist})

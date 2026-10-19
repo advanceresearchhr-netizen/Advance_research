@@ -131,6 +131,51 @@ def inference(model,r,p,availability,device,batch=128):
    logits.append(log.cpu())
  return torch.cat(logits),torch.cat(qvalues) if qvalues else None
 
+def matched_final_comparisons(frame,smoke=False):
+ """Validate identical video identity and labels BEFORE paired statistical tests.
+ CSV readers often infer numeric Penn Action IDs as integers, unlike fresh strings."""
+ from scipy.stats import binomtest
+ frame=frame.copy()
+ frame['video_id']=frame['video_id'].astype(str).str.zfill(4)
+ key=['seed','condition','severity','variant','video_id']
+ if frame[key].isna().any().any() or frame.duplicated(key).any():
+  raise ValueError('Missing/duplicate prediction identities in final comparisons')
+ results=[]
+ for (seed,condition,severity),part in frame.groupby(['seed','condition','severity']):
+  pivot=part.pivot(index='video_id',columns='variant',values='correct')
+  if 'v2' not in pivot:continue
+  label_map=part[part.variant=='v2'].set_index('video_id')['class_id']
+  for alternative in ('trained_mask_aware','trained_no_quality_supervision','specialist_rule'):
+   if alternative not in pivot:continue
+   # Every evaluated model must predict EXACTLY the same held-out video IDs.
+   a_ids=set(part.loc[part.variant=='v2','video_id'])
+   b_ids=set(part.loc[part.variant==alternative,'video_id'])
+   if not a_ids or a_ids!=b_ids:
+    raise ValueError(f'Paired prediction IDs mismatch: {seed} {condition} {severity} {alternative}; V2={len(a_ids)} competitor={len(b_ids)} overlap={len(a_ids & b_ids)}')
+   sub=pivot[['v2',alternative]].dropna()
+   if len(sub)!=len(a_ids):
+    raise ValueError(f'Incomplete paired predictions: {seed} {condition} {alternative}')
+   a=sub['v2'].to_numpy(dtype=float);b=sub[alternative].to_numpy(dtype=float)
+   gold=label_map.loc[sub.index].to_numpy()
+   other_labels=part[part.variant==alternative].set_index('video_id').loc[sub.index,'class_id'].to_numpy()
+   if not np.array_equal(gold,other_labels):
+    raise ValueError(f'Label mismatch between V2 and {alternative}')
+   rng=np.random.default_rng(int(seed)+int(float(severity)*1000)+len(condition))
+   clusters=[np.flatnonzero(gold==c) for c in np.unique(gold)]
+   if not clusters or any(len(group)==0 for group in clusters):
+    raise ValueError('No valid strata for paired bootstrap')
+   boot=[]
+   for _ in range(80 if smoke else 1500):
+    ix=np.concatenate([rng.choice(group,len(group),replace=True) for group in clusters])
+    boot.append(float((a[ix]-b[ix]).mean()))
+   n10=int(((a==1)&(b==0)).sum());n01=int(((a==0)&(b==1)).sum())
+   results.append({'seed':seed,'condition':condition,'severity':severity,'comparator':alternative,
+    'matched_samples':len(a),'delta_accuracy_v2_minus_comparator':float((a-b).mean()),
+    'ci95_lower':float(np.percentile(boot,2.5)),'ci95_upper':float(np.percentile(boot,97.5)),
+    'mcnemar_p_exploratory':float(binomtest(min(n10,n01),n10+n01,.5).pvalue) if n10+n01 else 1.})
+ if not results:raise ValueError('No paired model comparisons; inspect variant IDs and conditions')
+ return pd.DataFrame(results)
+
 def classification_outputs(df,out,action_names):
  """Human-readable class confusion/error cases using existing predictions."""
  names=list(action_names)
@@ -237,31 +282,12 @@ def main():
  pd.DataFrame(metrics).to_csv(out/'trained_controls_metrics.csv',index=False)
  pd.DataFrame(detailed).to_csv(out/'trained_controls_predictions.csv',index=False)
  (out/'trained_controls_history.json').write_text(json.dumps(histories,indent=2))
- first=pd.read_csv(out/'predictions_by_video.csv')
+ first=pd.read_csv(out/'predictions_by_video.csv',dtype={'video_id':str})
  combo=pd.concat([first,pd.DataFrame(detailed)],ignore_index=True)
+ combo['video_id']=combo['video_id'].astype(str).str.zfill(4)
  classification_outputs(combo,out,classes)
- from scipy.stats import binomtest
- comparisons=[]
- for (seed,condition,severity),part in combo.groupby(['seed','condition','severity']):
-  pivot=part.pivot(index='video_id',columns='variant',values='correct')
-  if 'v2' not in pivot:continue
-  for alternative in ('trained_mask_aware','trained_no_quality_supervision','specialist_rule'):
-   if alternative not in pivot:continue
-   sub=pivot[['v2',alternative]].dropna()
-   a=sub['v2'].to_numpy(dtype=float);b=sub[alternative].to_numpy(dtype=float)
-   gold=part[part.variant=='v2'].set_index('video_id').loc[sub.index,'class_id'].to_numpy()
-   rng=np.random.default_rng(int(seed)+int(severity*1000)+len(condition))
-   boot=[]
-   for _ in range(80 if args.smoke else 1500):
-    ix=np.concatenate([rng.choice(np.flatnonzero(gold==c),int(np.sum(gold==c)),replace=True) for c in np.unique(gold)])
-    boot.append(float((a[ix]-b[ix]).mean()))
-   n10=int(((a==1)&(b==0)).sum());n01=int(((a==0)&(b==1)).sum())
-   comparisons.append({'seed':seed,'condition':condition,'severity':severity,'comparator':alternative,
-    'delta_accuracy_v2_minus_comparator':float((a-b).mean()),'ci95_lower':float(np.percentile(boot,2.5)),
-    'ci95_upper':float(np.percentile(boot,97.5)),
-    'mcnemar_p_exploratory':float(binomtest(min(n10,n01),n10+n01,.5).pvalue) if n10+n01 else 1.})
- if not comparisons:raise RuntimeError('No matched final comparisons generated')
- pd.DataFrame(comparisons).to_csv(out/'final_matched_comparisons.csv',index=False)
+ comparisons=matched_final_comparisons(combo,smoke=args.smoke)
+ comparisons.to_csv(out/'final_matched_comparisons.csv',index=False)
  # High-quality per-sample reliability detection: matched clean/corrupt pairs.
  # Evaluate actual trained V2 router, rather than pooling corruption types
  # without a clean negative control.

@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from paper3.core import TemporalFusion
 from paper3.v2_model import ReliabilityRouter
-from paper3.final_campaign import MaskAwareReference, mask_inputs, inference, stats
+from paper3.final_campaign import MaskAwareReference, mask_inputs, inference, stats, train_no_quality
 
 class FinalCampaignTests(unittest.TestCase):
  def setUp(self):
@@ -30,4 +30,20 @@ class FinalCampaignTests(unittest.TestCase):
    self.assertEqual(tuple(logits.shape),(3,15))
    self.assertTrue(torch.isfinite(logits).all())
    self.assertIsNone(q)
+ def test_no_quality_control_runs_real_training_epoch(self):
+  # Regression for the 2026-10-19 GPU-smoke tuple-indexing failure.
+  # Both train and validation are RGB/pose/labels triples.
+  old_threads=torch.get_num_threads()
+  try:
+   torch.set_num_threads(1)
+   tr=(self.arr[0].clone(),self.arr[1].clone(),torch.tensor([0,1,2]))
+   val=(self.arr[0].clone(),self.arr[1].clone(),torch.tensor([0,1,2]))
+   corruption={'frame_dropout':(tr,val,0)}
+   ck,history=train_no_quality(self.base.state_dict(),tr,val,corruption,42,'cpu',epochs=1)
+   self.assertIsNotNone(ck)
+   self.assertEqual(len(history),1)
+   self.assertTrue(np.isfinite(history[0]['selection_score']))
+   self.assertIn('model',ck)
+  finally:
+   torch.set_num_threads(old_threads)
 if __name__=='__main__':unittest.main()

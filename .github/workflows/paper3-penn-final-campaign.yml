@@ -1,0 +1,193 @@
+name: Paper3 Penn Action Final Matched Controls Single GPU Run
+on:
+  push:
+    branches: [paper3/failure-resilience]
+    paths: [paper3/START_FINAL_CAMPAIGN_ONCE.txt]
+permissions:
+  contents: read
+concurrency:
+  group: paper3-penn-final-one-pod
+  cancel-in-progress: false
+jobs:
+  train:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure prerequisites
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          test -n "$RUNPOD_API_KEY"
+          test -f paper3/src/paper3/final_campaign.py
+          test -f paper3/src/paper3/build_manifest.py
+      - name: CPU preflight before renting GPU
+        run: |
+          cd paper3/src
+          python -m pip install -q -r requirements.txt
+          python -m compileall -q paper3 tests
+          python -m unittest discover -s tests -v
+      - name: Install RunPod CLI
+        run: |
+          curl -fLsS --retry 4 https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd64 -o /tmp/runpodctl
+          chmod +x /tmp/runpodctl
+          sudo mv /tmp/runpodctl /usr/local/bin/runpodctl
+          runpodctl version
+      - name: Build remote training script
+        id: bootstrap
+        run: |
+          cat > /tmp/paper3-final.sh <<'POD'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          started=$(date -u +%FT%TZ)
+          echo "PAPER3_FINAL_BEGIN:$started"
+          onexit(){ rc=$?; if [ "$rc" -ne 0 ]; then echo "PAPER3_FINAL_FAILED:$rc"; fi; }
+          trap onexit EXIT
+          mkdir -p /workspace/paper3 && cd /workspace/paper3
+          wget --tries=5 --timeout=120 -c -O Penn_Action.tar.gz https://www.cis.upenn.edu/~kostas/Penn_Action.tar.gz
+          test "$(stat -c%s Penn_Action.tar.gz)" = "3235203923"
+          python - <<'PY'
+          import tarfile,pathlib
+          d=pathlib.Path('/workspace/paper3/data');d.mkdir(exist_ok=True)
+          with tarfile.open('/workspace/paper3/Penn_Action.tar.gz') as a:a.extractall(d,filter='data')
+          PY
+          git clone --depth=20 --branch paper3/failure-resilience https://github.com/advanceresearchhr-netizen/Advance_research.git repo
+          cd repo && git checkout 1c6db0e384b1f6047fdbfb6a6128757ce3218cd1 && cd paper3/src
+          python -m pip install -q -r requirements.txt
+          python -m unittest discover -s tests -v
+          python -m paper3.build_manifest --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/penn_manifest.csv
+          echo "Reviewer campaign GPU data-backed smoke check before full training"
+          PAPER3_COMMIT=$(git rev-parse HEAD) python -m paper3.final_campaign --manifest /workspace/paper3/penn_manifest.csv --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/reviewer_smoke --device cuda --baseline-epochs 1 --v2-epochs 1 --feature-batch 8 --smoke
+          echo "Reviewer smoke complete; starting full predeclared experiment"
+          PAPER3_COMMIT=$(git rev-parse HEAD) python -m paper3.final_campaign --manifest /workspace/paper3/penn_manifest.csv --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/results --device cuda --baseline-epochs 35 --v2-epochs 25 --feature-batch 32
+          cp /workspace/paper3/penn_manifest.csv /workspace/paper3/results/penn_manifest.csv
+          cd /workspace/paper3
+          python - <<'PY'
+          import pathlib,json
+          d=pathlib.Path('results')
+          p=json.loads((d/'provenance.json').read_text())
+          assert p['completed'] and len(list(d.glob('reference_seed*.pt')))==3 and len(list(d.glob('v2_seed*.pt')))==3
+          for item in list(d.glob('*.pt')):assert item.stat().st_size>10000
+          assert (d/'aggregate_results.csv').stat().st_size>200
+          assert (d/'predictions_by_video.csv').stat().st_size>100000
+          assert (d/'paired_uncertainty.csv').stat().st_size>200
+          assert (d/'quality_detection.csv').stat().st_size>50
+          assert (d/'efficiency.csv').stat().st_size>50
+          assert len(list(d.glob('mask_aware_seed*.pt')))==3
+          assert len(list(d.glob('no_quality_seed*.pt')))==3
+          assert (d/'final_matched_comparisons.csv').stat().st_size>200
+          assert (d/'per_class_metrics.csv').stat().st_size>200
+          assert (d/'clean_vs_corrupt_detection.csv').stat().st_size>200
+          assert (d/'conditions.csv').stat().st_size>200
+          assert (d/'epoch_histories.json').stat().st_size>200
+          print('PAPER3_FINAL_RESULTS_VALIDATED')
+          PY
+          tar -czf paper3_final_results.tar.gz results
+          sha256sum paper3_final_results.tar.gz
+          echo "PAPER3_FINAL_TRANSFER_READY"
+          runpodctl send paper3_final_results.tar.gz
+          echo "PAPER3_FINAL_TRANSFER_COMPLETED"
+          POD
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import base64
+          print("b64="+base64.b64encode(open('/tmp/paper3-final.sh','rb').read()).decode())
+          PY
+      - name: Create one RTX4090 pod
+        id: create
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          SCRIPT_B64: ${{ steps.bootstrap.outputs.b64 }}
+        run: |
+          ENV_JSON=$(python -c 'import os,json;print(json.dumps({"SCRIPT_B64":os.environ["SCRIPT_B64"]}))')
+          runpodctl pod create --name paper3-penn-final-once --image runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04 --gpu-id "NVIDIA GeForce RTX 4090" --gpu-count 1 --container-disk-in-gb 65 --env "$ENV_JSON" --docker-args 'bash -lc "echo $SCRIPT_B64 | base64 -d > /tmp/paper3.sh && exec timeout --signal=TERM --kill-after=60s 255m bash /tmp/paper3.sh"' --output json > pod_response.json
+          python - <<'PY'
+          import json
+          v=json.load(open('pod_response.json'))
+          assert v.get('id')
+          open('pod_id.txt','w').write(v['id'])
+          print('Pod created; ID recorded for unconditional deletion')
+          PY
+      - name: Fetch results from Pod before shutdown
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          set -Eeuo pipefail
+          POD_ID=$(cat pod_id.txt)
+          : > paper3-final.log
+          TRANSFER_CODE=""
+          for i in $(seq 1 730); do
+            runpodctl pod logs "$POD_ID" --tail 1500 --source container > raw.jsonl 2>/dev/null || true
+            python - <<'PY' > paper3-final.log
+          import json
+          for line in open('raw.jsonl',errors='replace'):
+           try:print(json.loads(line).get('line',''))
+           except:pass
+          PY
+            if grep -q '^PAPER3_FINAL_FAILED:' paper3-final.log; then
+              tail -n 100 paper3-final.log
+              exit 1
+            fi
+            if grep -q 'Code is:' paper3-final.log; then
+              TRANSFER_CODE=$(sed -n 's/^.*Code is: *\([A-Za-z0-9-]*\).*$/\1/p' paper3-final.log | tail -1)
+              if [ -n "$TRANSFER_CODE" ]; then break; fi
+            fi
+            sleep 20
+          done
+          test -n "$TRANSFER_CODE" || { echo "No result-transfer code received within polling time"; exit 1; }
+          echo "Receiving verified results archive over encrypted RunPod transfer"
+          timeout 35m runpodctl receive "$TRANSFER_CODE"
+          python - <<'PY'
+          from pathlib import Path
+          import tarfile,json,io
+          p=Path('paper3_final_results.tar.gz')
+          assert p.stat().st_size>1000000
+          with tarfile.open(p) as tf:
+           names=tf.getnames()
+           assert 'results/provenance.json' in names and 'results/predictions_by_video.csv' in names
+           proven=json.load(tf.extractfile('results/provenance.json'))
+           assert proven['completed']
+           assert len([n for n in names if n.startswith('results/reference_seed') and n.endswith('.pt')])==3
+           assert len([n for n in names if n.startswith('results/v2_seed') and n.endswith('.pt')])==3
+           assert 'results/epoch_histories.json' in names
+           assert 'results/paired_uncertainty.csv' in names
+           assert 'results/final_matched_comparisons.csv' in names
+           assert 'results/per_class_metrics.csv' in names
+           assert 'results/clean_vs_corrupt_detection.csv' in names
+           assert len([n for n in names if n.startswith('results/mask_aware_seed') and n.endswith('.pt')])==3
+           assert len([n for n in names if n.startswith('results/no_quality_seed') and n.endswith('.pt')])==3
+           assert 'results/quality_detection.csv' in names
+           print('ARTIFACT_VALIDATED: reviewer evidence: six checkpoints, paired predictions, statistics')
+          PY
+      - name: Upload model weights and metrics as workflow artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper3-penn-final-evidence-results
+          path: paper3_final_results.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload audit logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper3-penn-final-audit
+          path: |
+            paper3-final.log
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Delete RunPod GPU
+        if: always()
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          set -Eeuo pipefail
+          if [ -s pod_id.txt ]; then
+            POD_ID=$(cat pod_id.txt)
+            for i in 1 2 3 4; do
+              if runpodctl pod delete "$POD_ID"; then echo "PAPER3_FINAL_POD_DELETE_CONFIRMED:$POD_ID"; exit 0; fi
+              sleep 10
+            done
+            echo "CRITICAL: POD DELETION FAILED; manually delete $POD_ID in RunPod now"
+            exit 1
+          fi
+          echo "No recorded pod ID. Verify RunPod console if creation was interrupted."

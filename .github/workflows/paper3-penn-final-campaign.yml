@@ -52,7 +52,7 @@ jobs:
           with tarfile.open('/workspace/paper3/Penn_Action.tar.gz') as a:a.extractall(d,filter='data')
           PY
           git clone --depth=20 --branch paper3/failure-resilience https://github.com/advanceresearchhr-netizen/Advance_research.git repo
-          cd repo && git checkout 76c0c4d95a43e1d51a6bf291e9d1fc4b4e8816a8 && cd paper3/src
+          cd repo && git checkout 2034f573cb4de889f48b08022ef3a52a58d833f0 && cd paper3/src
           python -m pip install -q -r requirements.txt
           python -m unittest discover -s tests -v
           python -m paper3.build_manifest --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/penn_manifest.csv

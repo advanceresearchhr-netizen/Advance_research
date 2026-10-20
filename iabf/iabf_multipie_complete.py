@@ -68,8 +68,12 @@ class StandardRecognizer(nn.Module):
         return F.normalize(self.emb_head(self.face_proj(self.backbone(x))),dim=1)
 
 def load_model(path,cls,device):
-    # Only run on TRUSTED own checkpoint files: weights_only=False may deserialize objects.
-    ckpt=torch.load(path,map_location='cpu',weights_only=True)
+    # Original research checkpoints contain NumPy scalar validation metadata.
+    # Use an explicit NumPy allowlist and retain safe weights-only loading.
+    numpy_safe=[np._core.multiarray.scalar,np.dtype]
+    numpy_safe += [type(np.dtype(t)) for t in ('float32','float64','int32','int64','uint8','bool')]
+    with torch.serialization.safe_globals(numpy_safe):
+        ckpt=torch.load(path,map_location='cpu',weights_only=True)
     state=ckpt.get('model_state_dict',ckpt) if isinstance(ckpt,dict) else ckpt
     state={k:v for k,v in state.items() if not k.startswith('backbone.logits.')}
     model=cls();model.load_state_dict(state,strict=True)

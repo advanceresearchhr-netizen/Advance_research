@@ -1,6 +1,6 @@
 # IABF Multi-PIE 50-image experiment: GitHub validation branch
 
-**Status:** GitHub Actions smoke-test scaffold only. The experiment script must be committed to `iabf/iabf_multipie_complete.py` before smoke CI can pass. The research code is available in the ChatGPT-generated IABF_MultiPIE_COMPLETE_50_Image.zip package, but was not automatically transferred into this repository.
+**Status:** The original 50-image IABF experiment script is committed to `iabf/iabf_multipie_complete.py` on this branch. Local Python compilation and static 50-image guard checks passed on 2026-10-20. GitHub Actions execution remains unconfirmed; the smoke workflow is not a GPU or scientific validation.
 
 The default branch is unchanged. The existing HCRL and other research projects are unaffected.
 

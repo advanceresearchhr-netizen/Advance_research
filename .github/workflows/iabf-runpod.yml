@@ -60,7 +60,7 @@ jobs:
           assert math.isfinite(epochs) and epochs.is_integer() and 1 <= epochs <= 100, "epochs must be an integer in [1,100]"
           # GitHub Actions numeric inputs can arrive as "30.0"; normalize before RunPod CLI arguments.
           with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as f:
-              f.write("IABF_EPOCHS="+str(int(epochs))+"\\n")
+              f.write("IABF_EPOCHS="+str(int(epochs))+"\n")
           print("IABF_PREFLIGHT_OK: no GPU started yet")
           PY
       - name: Verify Kaggle dataset assets are visible before GPU billing

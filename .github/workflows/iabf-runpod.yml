@@ -55,7 +55,12 @@ jobs:
           import os
           assert os.getenv("IABF_ASSETS_DATASET","").count("/")==1, "IABF_ASSETS_DATASET must be owner/slug"
           assert os.getenv("IABF_SEED") in ("42","123","2026")
-          assert 1 <= int(os.environ["IABF_EPOCHS"]) <= 100
+          import math
+          epochs=float(os.environ["IABF_EPOCHS"])
+          assert math.isfinite(epochs) and epochs.is_integer() and 1 <= epochs <= 100, "epochs must be an integer in [1,100]"
+          # GitHub Actions numeric inputs can arrive as "30.0"; normalize before RunPod CLI arguments.
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as f:
+              f.write("IABF_EPOCHS="+str(int(epochs))+"\\n")
           print("IABF_PREFLIGHT_OK: no GPU started yet")
           PY
       - name: Verify Kaggle dataset assets are visible before GPU billing

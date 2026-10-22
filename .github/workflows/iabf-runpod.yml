@@ -24,7 +24,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   iabf-gpu:
-    if: github.ref == 'refs/heads/research/iabf-multipie-50image-ci'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
@@ -35,9 +34,10 @@ jobs:
       RUNPOD_GPU: ${{ inputs.gpu }}
       IABF_SEED: ${{ inputs.seed }}
       IABF_EPOCHS: ${{ inputs.epochs }}
-      IABF_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: research/iabf-multipie-50image-ci
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -50,6 +50,7 @@ jobs:
           done
           test -f iabf/iabf_multipie_complete.py
           python -m py_compile iabf/iabf_multipie_complete.py
+          printf 'IABF_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           python - <<'PY'
           import os
           assert os.getenv("IABF_ASSETS_DATASET","").count("/")==1, "IABF_ASSETS_DATASET must be owner/slug"

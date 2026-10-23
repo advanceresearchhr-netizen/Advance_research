@@ -8,19 +8,17 @@ This workflow is **manual-dispatch only**. It does not change, call, cancel, or 
 
 - `RUNPOD_API_KEY`: existing RunPod API key (reuses the HCRL infrastructure).
 - `KAGGLE_USERNAME` and `KAGGLE_KEY`: Kaggle API credentials for dataset access.
-- `IABF_ASSETS_DATASET`: exact Kaggle private dataset slug `owner/slug` with the original **best_standard_recognizer.pth**, **best_casia_recognizer.pth**, and **multipie_manifest.csv**.
+- `IABF_ASSETS_DATASET`: exact Kaggle private dataset slug `owner/slug` with the original **best_standard_recognizer.pth**, **best_casia_recognizer.pth**, ; the manifest is generated automatically from Kaggle image filenames.
 
 The Kaggle dataset `aliates/multi-pie` is downloaded inside the GPU pod. The **private assets Kaggle dataset must be restricted** because it contains trained weights. Never place raw pretrained checkpoints or Kaggle credentials into public GitHub commits.
 
-### REQUIRED scientific input: multipie_manifest.csv
+### Automatic Kaggle processed-subset manifest
 
-Must contain `path,subject,camera,yaw_deg`; may additionally contain `session,illumination`. Paths must be relative to the extracted public dataset root. Multi-PIE camera IDs and signed yaw degrees must be verified against real camera metadata, not inferred from arbitrary filename digits. One person across sessions must share the same subject ID. Camera-to-yaw mapping must be one-to-one and signed consistently.
-
-**The workflow cannot generate a scientifically valid manifest from an unknown Kaggle folder structure.** It intentionally fails when that input is absent or invalid. It does not invent camera angles.
+`iabf/build_kaggle_manifest.py` reads labeled Multi-PIE filename fields and Idiap/Bob's documented camera-to-yaw mapping. It writes `/workspace/iabf/data/multipie_manifest.csv` and `kaggle_dataset_audit.json`. It refuses to train when filenames cannot be parsed or the dataset lacks the required frontal/rotated subject coverage. This is a custom Kaggle subset experiment, **not** an official Bob Protocol P reproduction.
 
 ### Before dispatching
 
-1. Add the three files to a private Kaggle dataset and save its owner/slug as `IABF_ASSETS_DATASET`.
+1. Add both `.pth` checkpoints to a private Kaggle dataset and save its owner/slug as `IABF_ASSETS_DATASET`.
 2. Add Kaggle API secrets to **Settings → Secrets and variables → Actions**.
 3. Confirm the repo's existing `RUNPOD_API_KEY` has budget and GPU provisioning rights.
 4. Open **Actions → IABF Multi-PIE 50-image RunPod GPU → Run workflow**; select branch `research/iabf-multipie-50image-ci`, GPU type, seed, epochs.
@@ -29,7 +27,7 @@ Must contain `path,subject,camera,yaw_deg`; may additionally contain `session,il
 
 1. Free GitHub-hosted preflight validates secrets, experiment source and Kaggle asset listings.
 2. Only after preflight, start a dedicated RunPod pod.
-3. Download datasets, validate the manifest and ensure CUDA works.
+3. Download datasets, generate and validate the Kaggle subset manifest, and ensure CUDA works.
 4. Adapt the IABF gate on exactly **50** images; evaluate identity-disjoint frontal-to-rotated recognition and ablations.
 5. Transfer compact results (CSV/JSON/PNG) as a checksummed compressed log bundle, then upload `iabf_results.zip` and `iabf.log` as GitHub Actions artifacts.
 6. Delete **only** the pod whose ID was created by this workflow.

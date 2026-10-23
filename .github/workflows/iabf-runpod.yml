@@ -87,17 +87,42 @@ jobs:
           python - <<'PY'
           import os
           from pathlib import PurePosixPath
+          from requests.exceptions import HTTPError
           from kaggle.api.kaggle_api_extended import KaggleApi
-          api=KaggleApi();api.authenticate()
+
+          dataset=os.environ["IABF_ASSETS_DATASET"]
+          owner=dataset.split("/",1)[0]
+          username=os.environ["KAGGLE_USERNAME"].strip()
+          if username.casefold()!=owner.casefold():
+              raise SystemExit("::error::KAGGLE_USERNAME does not match the OWNER of the private IABF dataset. Update KAGGLE_USERNAME and KAGGLE_KEY using the Kaggle account that owns the checkpoint dataset.")
+          if os.environ["KAGGLE_KEY"].strip().startswith("KGAT_"):
+              raise SystemExit("::error::KAGGLE_KEY contains a newer Kaggle API token (KGAT_), not the legacy kaggle.json key expected by this workflow. Use Kaggle Settings > Legacy API Credentials > Create Legacy API Key, then update KAGGLE_KEY from kaggle.json.")
+          api=KaggleApi()
+          try:
+              api.authenticate()
+              info=api.dataset_list_files(dataset)
+          except HTTPError as e:
+              status=getattr(e.response,"status_code",None)
+              if status in (401,403):
+                  raise SystemExit(f"::error::IABF_KAGGLE_PRIVATE_ACCESS_DENIED HTTP {status}: the provided Kaggle credentials cannot list the PRIVATE checkpoints dataset. Regenerate Legacy API Credentials in the dataset owner's Kaggle account; update both KAGGLE_USERNAME and KAGGLE_KEY in repository Actions secrets. Dataset visibility should stay PRIVATE.") from None
+              raise SystemExit(f"::error::IABF_KAGGLE_PRIVATE_LOOKUP_FAILED HTTP {status}: check Kaggle service and dataset accessibility before GPU provisioning.") from None
+          except Exception as e:
+              raise SystemExit(f"::error::IABF_KAGGLE_AUTH_OR_METADATA_FAILED ({type(e).__name__}). Check Kaggle legacy credentials and dataset permissions.") from None
           needed={"best_standard_recognizer.pth","best_casia_recognizer.pth"}
-          info=api.dataset_list_files(os.environ["IABF_ASSETS_DATASET"])
           found={PurePosixPath(x.name).name for x in (info.files or [])}
           missing=needed-found
-          if missing:raise RuntimeError(f"Private Kaggle assets dataset missing: {sorted(missing)}")
-          public=api.dataset_list_files("aliates/multi-pie")
-          if not (public.files or []):raise RuntimeError("Public Multi-PIE Kaggle dataset has no listed files")
+          if missing:
+              raise SystemExit(f"::error::IABF_KAGGLE_PRIVATE_FILES_MISSING: {sorted(missing)}. Upload these as individual files (not an unextracted archive).")
+          print("IABF_KAGGLE_PRIVATE_ASSETS_OK (names checked, no secret values printed)")
+          try:
+              public=api.dataset_list_files("aliates/multi-pie")
+          except HTTPError as e:
+              status=getattr(e.response,"status_code",None)
+              raise SystemExit(f"::error::IABF_KAGGLE_PUBLIC_LOOKUP_FAILED HTTP {status}: cannot read the public Multi-PIE file listing.") from None
+          if not (public.files or []):
+              raise SystemExit("::error::IABF_KAGGLE_PUBLIC_FILES_EMPTY: public Multi-PIE listing returned no files.")
           print("IABF_KAGGLE_ASSETS_METADATA_OK")
-          print("Dataset file count:",len(public.files))
+          print("Public dataset listed files:",len(public.files))
           PY
       - name: Install RunPod CLI
         run: |

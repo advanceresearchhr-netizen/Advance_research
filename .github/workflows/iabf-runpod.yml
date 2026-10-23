@@ -185,7 +185,7 @@ jobs:
           if len(data)>8_000_000:raise RuntimeError('Result archive over 8MB log-transfer limit; keep pod for manual artifact recovery')
           s=base64.b64encode(data).decode()
           print('IABF_BUNDLE_BEGIN',len(data),hashlib.sha256(data).hexdigest(),flush=True)
-          for i in range(0,len(s),1500):print('IABF_CHUNK',i//1500,s[i:i+1500],flush=True)
+          for i in range(0,len(s),3000):print('IABF_CHUNK',i//3000,s[i:i+3000],flush=True)
           print('IABF_BUNDLE_END',flush=True)
           print('IABF_RESULTS_FILES',len(chosen),flush=True)
           PY
@@ -220,7 +220,7 @@ jobs:
           set -euo pipefail
           POD_ID=$(cat pod_id.txt)
           for i in $(seq 1 630); do
-            runpodctl pod logs "$POD_ID" --tail 20000 --source container > podlogs.jsonl 2>/dev/null || true
+            runpodctl pod logs "$POD_ID" --tail 5000 --source container > podlogs.jsonl 2>/dev/null || true
             python - <<'PY'
           import json
           from pathlib import Path

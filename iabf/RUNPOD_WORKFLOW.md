@@ -1,6 +1,6 @@
 # IABF RunPod GPU workflow (isolated)
 
-**Workflow:** `.github/workflows/iabf-runpod.yml` on the `research/iabf-multipie-50image-ci` branch.
+**Workflow:** `.github/workflows/iabf-runpod.yml` on `main`, explicitly checking out the isolated `research/iabf-multipie-50image-ci` branch for experiment code.
 
 This workflow is **manual-dispatch only**. It does not change, call, cancel, or modify any HCRL / Paper-2 workflow. It uses a separate job, concurrency group, pod name, working directory, and artifact prefix.
 
@@ -8,7 +8,7 @@ This workflow is **manual-dispatch only**. It does not change, call, cancel, or 
 
 - `RUNPOD_API_KEY`: existing RunPod API key (reuses the HCRL infrastructure).
 - `KAGGLE_USERNAME` and `KAGGLE_KEY`: Kaggle API credentials for dataset access.
-- `IABF_ASSETS_DATASET`: exact Kaggle private dataset slug `owner/slug` with the original **best_standard_recognizer.pth**, **best_casia_recognizer.pth**, ; the manifest is generated automatically from Kaggle image filenames.
+- `IABF_ASSETS_DATASET`: exact Kaggle private dataset slug `owner/slug` with the original **best_standard_recognizer.pth**, **best_casia_recognizer.pth**. The manifest is generated automatically from Kaggle image filenames.
 
 The Kaggle dataset `aliates/multi-pie` is downloaded inside the GPU pod. The **private assets Kaggle dataset must be restricted** because it contains trained weights. Never place raw pretrained checkpoints or Kaggle credentials into public GitHub commits.
 
@@ -21,7 +21,7 @@ The Kaggle dataset `aliates/multi-pie` is downloaded inside the GPU pod. The **p
 1. Add both `.pth` checkpoints to a private Kaggle dataset and save its owner/slug as `IABF_ASSETS_DATASET`.
 2. Add Kaggle API secrets to **Settings → Secrets and variables → Actions**.
 3. Confirm the repo's existing `RUNPOD_API_KEY` has budget and GPU provisioning rights.
-4. Open **Actions → IABF Multi-PIE 50-image RunPod GPU → Run workflow**; select branch `research/iabf-multipie-50image-ci`, GPU type, seed, epochs.
+4. Open **Actions → IABF Multi-PIE 50-image RunPod GPU → Run workflow**; select branch `main`, GPU type, seed, epochs. The workflow checks out the IABF research code automatically.
 
 ## Execution
 

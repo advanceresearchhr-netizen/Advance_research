@@ -1,0 +1,97 @@
+name: IABF free Kaggle and model assets preflight
+on:
+  push:
+    branches:
+      - research/iabf-multipie-50image-ci
+    paths:
+      - .github/workflows/iabf-free-data-preflight.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  free-data-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+      KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+      IABF_ASSETS_DATASET: ${{ secrets.IABF_ASSETS_DATASET }}
+    steps:
+      - name: Checkout IABF research
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Kaggle library
+        run: python -m pip install -q kaggle
+      - name: Check dataset access without GPU or downloads
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, re, sys, traceback
+          from pathlib import Path, PurePosixPath
+          from urllib.parse import urlparse
+          from requests.exceptions import HTTPError
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          report={"kind":"IABF_FREE_PREFLIGHT","status":"FAIL","checks":{}}
+          def save_and_exit(code, reason):
+              report["reason"]=reason
+              report["status"]="PASS" if code==0 else "FAIL"
+              Path("iabf_free_preflight_report.json").write_text(json.dumps(report,indent=2))
+              print("IABF_PREFLIGHT_RESULT",report["status"],reason)
+              sys.exit(code)
+          raw=os.environ.get("IABF_ASSETS_DATASET","").strip().strip('"').strip("'")
+          if raw.startswith(("https://","http://")):
+              parsed=urlparse(raw)
+              parts=parsed.path.strip("/").split("/")
+              if parsed.hostname not in ("kaggle.com","www.kaggle.com") or len(parts)!=3 or parts[0]!="datasets":
+                  save_and_exit(1,"INVALID_PRIVATE_KAGGLE_DATASET_URL")
+              ds=parts[1]+"/"+parts[2]
+          else:
+              ds=raw.strip("/")
+          if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+",ds):
+              save_and_exit(1,"INVALID_PRIVATE_DATASET_SLUG")
+          account=os.environ.get("KAGGLE_USERNAME","").strip()
+          if account.casefold()!=ds.split("/")[0].casefold():
+              save_and_exit(1,"KAGGLE_USERNAME_DIFFERS_FROM_DATASET_OWNER")
+          if not os.environ.get("KAGGLE_KEY"):
+              save_and_exit(1,"MISSING_KAGGLE_KEY")
+          if os.environ["KAGGLE_KEY"].strip().startswith("KGAT_"):
+              save_and_exit(1,"NEW_STYLE_KGAT_TOKEN_IN_LEGACY_KEY_ENV")
+          api=KaggleApi()
+          try:
+              api.authenticate()
+          except Exception:
+              save_and_exit(1,"KAGGLE_CREDENTIALS_NOT_READABLE")
+          report["checks"]["credential_format"]="present_and_matching_account"
+          def listfiles(label,slug):
+              try:
+                  resp=api.dataset_list_files(slug)
+                  files=[x.name for x in (resp.files or [])]
+                  report["checks"][label]={"ok":True,"count":len(files),"examples":files[:18]}
+                  return files
+              except HTTPError as exc:
+                  status=getattr(exc.response,"status_code",None)
+                  report["checks"][label]={"ok":False,"status":status}
+                  save_and_exit(1,f"{label.upper()}_HTTP_{status}")
+              except Exception as exc:
+                  report["checks"][label]={"ok":False,"exception_type":type(exc).__name__}
+                  save_and_exit(1,f"{label.upper()}_API_FAILURE")
+          private=listfiles("private_checkpoint_dataset",ds)
+          needed={"best_standard_recognizer.pth","best_casia_recognizer.pth"}
+          available={PurePosixPath(x).name for x in private}
+          if not needed.issubset(available):
+              save_and_exit(1,"CHECKPOINT_FILES_NOT_SEPARATELY_ACCESSIBLE")
+          public=listfiles("public_multipie_dataset","aliates/multi-pie")
+          if not public:
+              save_and_exit(1,"PUBLIC_MULTIPIE_NO_FILES")
+          save_and_exit(0,"BOTH_DATASETS_LISTED_AND_CHECKPOINTS_VERIFIED")
+          PY
+      - name: Publish preflight report even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iabf-free-preflight-report
+          path: iabf_free_preflight_report.json
+          if-no-files-found: warn

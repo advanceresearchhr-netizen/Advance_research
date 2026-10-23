@@ -49,7 +49,8 @@ jobs:
             test -n "${!key}" || { echo "::error::Required secret $key is missing"; exit 1; }
           done
           test -f iabf/iabf_multipie_complete.py
-          python -m py_compile iabf/iabf_multipie_complete.py
+          test -f iabf/build_kaggle_manifest.py
+          python -m py_compile iabf/iabf_multipie_complete.py iabf/build_kaggle_manifest.py
           printf 'IABF_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           python - <<'PY'
           import os
@@ -73,7 +74,7 @@ jobs:
           from pathlib import PurePosixPath
           from kaggle.api.kaggle_api_extended import KaggleApi
           api=KaggleApi();api.authenticate()
-          needed={"best_standard_recognizer.pth","best_casia_recognizer.pth","multipie_manifest.csv"}
+          needed={"best_standard_recognizer.pth","best_casia_recognizer.pth"}
           info=api.dataset_list_files(os.environ["IABF_ASSETS_DATASET"])
           found={PurePosixPath(x.name).name for x in (info.files or [])}
           missing=needed-found
@@ -109,17 +110,19 @@ jobs:
           import shutil
           from pathlib import Path
           p=Path('/workspace/iabf/assets')
-          required=['best_standard_recognizer.pth','best_casia_recognizer.pth','multipie_manifest.csv']
+          required=['best_standard_recognizer.pth','best_casia_recognizer.pth']
           for name in required:
               found=list(p.rglob(name))
               if len(found)!=1:raise RuntimeError(f'{name}: expected one file in private dataset, got {len(found)}')
-              dest=Path('/workspace/iabf/data')/name if name.endswith('.csv') else p/name
+              dest=p/name
               if found[0]!=dest:shutil.copyfile(found[0],dest)
               print('IABF_ASSET_OK',name,'bytes',dest.stat().st_size)
           PY
           git clone --depth 1 --branch research/iabf-multipie-50image-ci https://github.com/advanceresearchhr-netizen/Advance_research.git /workspace/iabf/repo
           cd /workspace/iabf/repo
           test "$(git rev-parse HEAD)" = "$IABF_COMMIT" || { echo "IABF commit mismatch"; exit 1; }
+          echo IABF_BUILD_KAGGLE_MANIFEST
+          python -u iabf/build_kaggle_manifest.py --root /workspace/iabf/data --output /workspace/iabf/data/multipie_manifest.csv --audit /workspace/iabf/results/kaggle_dataset_audit.json
           python - <<'PY'
           import torch
           assert torch.cuda.is_available(), "No CUDA GPU available"

@@ -54,7 +54,22 @@ jobs:
           printf 'IABF_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           python - <<'PY'
           import os
-          assert os.getenv("IABF_ASSETS_DATASET","").count("/")==1, "IABF_ASSETS_DATASET must be owner/slug"
+          import re
+          from urllib.parse import urlparse
+          raw=os.environ["IABF_ASSETS_DATASET"].strip().strip('"').strip("'")
+          if raw.startswith(("http://", "https://")):
+              parsed=urlparse(raw)
+              segments=[p for p in parsed.path.strip("/").split("/") if p]
+              if parsed.hostname not in ("kaggle.com", "www.kaggle.com") or len(segments)!=3 or segments[0]!="datasets":
+                  raise SystemExit("::error::IABF_ASSETS_DATASET must be a Kaggle dataset URL (https://www.kaggle.com/datasets/OWNER/SLUG), or OWNER/SLUG.")
+              dataset=segments[1]+"/"+segments[2]
+          else:
+              dataset=raw.strip("/")
+          if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+",dataset):
+              raise SystemExit("::error::IABF_ASSETS_DATASET value is invalid. Open your PRIVATE Kaggle checkpoints dataset, copy its browser URL, and set the secret to OWNER/SLUG or the full dataset URL (not a ZIP filename or API key).")
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as f:
+              f.write("IABF_ASSETS_DATASET="+dataset+"\n")
+          print("IABF_ASSETS_DATASET_FORMAT_OK (actual value not printed)")
           assert os.getenv("IABF_SEED") in ("42","123","2026")
           import math
           epochs=float(os.environ["IABF_EPOCHS"])

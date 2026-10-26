@@ -1,0 +1,37 @@
+name: Paper3 Minimal Novelty CPU Preflight
+on:
+  push:
+    branches: [paper3/minimal-novelty-defense]
+    paths: [paper3/START_MINIMAL_PREFLIGHT_ONCE.txt]
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          cd paper3/src
+          python -m pip install -q -r requirements.txt
+      - name: Compile and test complete Paper 3 package
+        run: |
+          cd paper3/src
+          python -m compileall -q paper3 tests
+          python -m unittest discover -s tests -v
+      - name: Verify source and workflow consistency
+        run: |
+          python - <<'PY'
+          import pathlib,ast
+          root=pathlib.Path('paper3/src')
+          for name in ('minimal_novelty','feature_modulation_control','final_campaign','reviewer_campaign','core','data','train'):
+           path=root/'paper3'/f'{name}.py'
+           ast.parse(path.read_text())
+          workflow=pathlib.Path('.github/workflows/paper3-penn-minimal-novelty.yml').read_text()
+          assert '--feature-batch' not in workflow
+          assert 'paper3.minimal_novelty' in workflow
+          assert 'paper3/START_MINIMAL_NOVELTY_ONCE.txt' in workflow
+          assert 'if: always()' in workflow
+          print('PAPER3_CPU_PREFLIGHT_VERIFIED')
+          PY

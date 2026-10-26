@@ -1,0 +1,1 @@
+Trigger exactly one bounded minimal novelty GPU campaign. Source pinned to 0c52546ea9645f231e1986b0beefead44a84253c. Exploratory comparison only; no predeclared superiority claim.\n

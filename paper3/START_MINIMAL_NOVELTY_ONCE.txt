@@ -1,1 +1,1 @@
-Trigger exactly one bounded minimal novelty GPU campaign. Source pinned to 0c52546ea9645f231e1986b0beefead44a84253c. Exploratory comparison only; no predeclared superiority claim.\n
+Second attempt after successful CPU-only verification run 40361115815. Corrected source pinned to f03c9c21057b1e597d2e4f94db1672b2309988d2. Run once; no automatic retries.

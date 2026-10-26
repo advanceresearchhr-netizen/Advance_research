@@ -52,7 +52,7 @@ jobs:
           with tarfile.open('/workspace/paper3/Penn_Action.tar.gz') as a:a.extractall(d,filter='data')
           PY
           git clone --depth=20 --branch paper3/minimal-novelty-defense https://github.com/advanceresearchhr-netizen/Advance_research.git repo
-          cd repo && git checkout 0c52546ea9645f231e1986b0beefead44a84253c && cd paper3/src
+          cd repo && git checkout f03c9c21057b1e597d2e4f94db1672b2309988d2 && cd paper3/src
           python -m pip install -q -r requirements.txt
           python -m unittest discover -s tests -v
           python -m paper3.build_manifest --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/penn_manifest.csv

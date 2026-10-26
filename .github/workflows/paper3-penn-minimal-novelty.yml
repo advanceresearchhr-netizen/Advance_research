@@ -57,9 +57,9 @@ jobs:
           python -m unittest discover -s tests -v
           python -m paper3.build_manifest --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/penn_manifest.csv
           echo "Reviewer campaign GPU data-backed smoke check before full training"
-          PAPER3_COMMIT=$(git rev-parse HEAD) python -m paper3.minimal_novelty --manifest /workspace/paper3/penn_manifest.csv --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/reviewer_smoke --device cuda --feature-batch 8 --smoke
+          PAPER3_COMMIT=$(git rev-parse HEAD) python -m paper3.minimal_novelty --manifest /workspace/paper3/penn_manifest.csv --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/reviewer_smoke --device cuda --smoke
           echo "Reviewer smoke complete; starting full predeclared experiment"
-          PAPER3_COMMIT=$(git rev-parse HEAD) python -m paper3.minimal_novelty --manifest /workspace/paper3/penn_manifest.csv --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/results --device cuda --feature-batch 32
+          PAPER3_COMMIT=$(git rev-parse HEAD) python -m paper3.minimal_novelty --manifest /workspace/paper3/penn_manifest.csv --data-root /workspace/paper3/data/Penn_Action --out /workspace/paper3/results --device cuda
           cp /workspace/paper3/penn_manifest.csv /workspace/paper3/results/penn_manifest.csv
           cd /workspace/paper3
           python - <<'PY'

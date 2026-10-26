@@ -1,7 +1,7 @@
 name: Paper3 Minimal Novelty Matched Comparator Single GPU Run
 on:
   push:
-    branches: [paper3/failure-resilience]
+    branches: [paper3/minimal-novelty-defense]
     paths: [paper3/START_MINIMAL_NOVELTY_ONCE.txt]
 permissions:
   contents: read
@@ -51,7 +51,7 @@ jobs:
           d=pathlib.Path('/workspace/paper3/data');d.mkdir(exist_ok=True)
           with tarfile.open('/workspace/paper3/Penn_Action.tar.gz') as a:a.extractall(d,filter='data')
           PY
-          git clone --depth=20 --branch paper3/failure-resilience https://github.com/advanceresearchhr-netizen/Advance_research.git repo
+          git clone --depth=20 --branch paper3/minimal-novelty-defense https://github.com/advanceresearchhr-netizen/Advance_research.git repo
           cd repo && git checkout 0c52546ea9645f231e1986b0beefead44a84253c && cd paper3/src
           python -m pip install -q -r requirements.txt
           python -m unittest discover -s tests -v

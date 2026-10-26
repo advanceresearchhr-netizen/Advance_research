@@ -1,0 +1,1 @@
+Run CPU-only unit and synthetic integration verification before GPU retrial.

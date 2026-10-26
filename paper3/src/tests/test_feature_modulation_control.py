@@ -9,6 +9,7 @@ class FeatureModulationTests(unittest.TestCase):
     def test_forward_masks_and_frozen_reference(self):
         torch.manual_seed(7)
         reference = TemporalFusion()
+        reference.eval()
         model = FrozenFeatureModulation(reference.state_dict())
         model.eval()
         rgb = torch.randn(2, 16, 512)

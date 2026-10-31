@@ -1,0 +1,1 @@
+One-shot authorized Penn Action real-data smoke on paper3/failure-resilience. Triggered once for 2026-10-18. Do not modify this file to retrigger.

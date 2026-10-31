@@ -1,0 +1,1 @@
+Owner-authorized one-shot Paper 3 V2 full Penn Action training, with CPU preflight, pinned V2 code 4869d07540439f09f95365220a362f5e98c26952, three seeds and zero auto retries. Preserve artifacts and delete RunPod pod on all outcomes. Trigger: 2026-10-18.

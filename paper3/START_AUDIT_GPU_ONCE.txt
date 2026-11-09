@@ -1,0 +1,1 @@
+Owner-authorized single Paper 3 audit GPU campaign. Trigger once. 2026-11-09. CPU tests before GPU rental; unconditional cleanup.

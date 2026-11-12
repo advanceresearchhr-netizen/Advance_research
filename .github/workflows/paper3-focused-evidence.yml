@@ -151,7 +151,9 @@ jobs:
            assert len([n for n in names if n.startswith('results/v2_seed') and n.endswith('.pt')])==3
            assert 'results/epoch_histories.json' in names
            assert 'results/paired_uncertainty.csv' in names
-           assert 'results/quality_detection.csv' in names\n           assert 'results/focused/focused_metrics.csv' in names\n           assert 'results/focused/focused_predictions.csv' in names
+           assert 'results/quality_detection.csv' in names
+           assert 'results/focused/focused_metrics.csv' in names
+           assert 'results/focused/focused_predictions.csv' in names
            print('ARTIFACT_VALIDATED: reviewer evidence: six checkpoints, paired predictions, statistics')
           PY
       - name: Upload model weights and metrics as workflow artifact

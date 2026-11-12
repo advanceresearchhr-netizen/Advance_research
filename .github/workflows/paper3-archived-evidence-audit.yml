@@ -1,0 +1,38 @@
+name: Paper3 Archived Evidence CPU Audit
+on:
+  push:
+    branches: [paper3/reviewer-audit-20261109]
+    paths: ['paper3/src/paper3/audit_saved_predictions.py', '.github/workflows/paper3-archived-evidence-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CPU audit dependencies
+        run: python -m pip install -q pandas scipy
+      - name: Download successful archived experiment
+        uses: actions/download-artifact@v4
+        with:
+          name: paper3-penn-reviewer-evidence-results
+          run-id: 42667838006
+          github-token: ${{ github.token }}
+          path: /tmp/paper3-evidence
+      - name: Extract and validate saved results
+        run: |
+          mkdir -p /tmp/paper3-saved
+          tar -xzf /tmp/paper3-evidence/paper3_reviewer_results.tar.gz -C /tmp/paper3-saved
+          test -s /tmp/paper3-saved/results/predictions_by_video.csv
+          test -s /tmp/paper3-saved/results/clean_vs_corrupt_detection.csv
+      - name: Run paired tests without GPU
+        run: python paper3/src/paper3/audit_saved_predictions.py --results /tmp/paper3-saved/results --out audit-results
+      - name: Upload audit tables
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper3-cpu-audit-tables
+          path: audit-results/
+          if-no-files-found: error
